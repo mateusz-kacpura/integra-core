@@ -1,0 +1,72 @@
+syntax = "proto3";
+
+package accounting.v1;
+
+import "google/protobuf/timestamp.proto";
+
+option go_package = "github.com/mateusz-kacpura/integra/integra-proto/gen/go/accounting/v1;accountingv1";
+
+// InvoiceService manages commercial invoicing lifecycle and invoice generation.
+service InvoiceService {
+  // GenerateInvoice creates a new invoice from the provided parameters.
+  rpc GenerateInvoice(GenerateInvoiceRequest) returns (GenerateInvoiceResponse);
+}
+
+enum InvoiceStatus {
+  INVOICE_STATUS_UNSPECIFIED = 0;
+  INVOICE_STATUS_DRAFT = 1;
+  INVOICE_STATUS_ISSUED = 2;
+  INVOICE_STATUS_PAID = 3;
+  INVOICE_STATUS_OVERDUE = 4;
+  INVOICE_STATUS_CANCELLED = 5;
+}
+
+// InvoiceResponse is a shared message used across services that deal with invoices.
+message InvoiceResponse {
+  string id = 1;
+  string invoice_number = 2;
+  string issuer_id = 3;
+  string recipient_id = 4;
+  InvoiceStatus status = 5;
+  google.protobuf.Timestamp issue_date = 6;
+  google.protobuf.Timestamp due_date = 7;
+  string net_amount = 8; // decimal string for precision
+  string tax_amount = 9; // decimal string for precision
+  string gross_amount = 10; // decimal string for precision
+  string currency = 11;
+  repeated InvoiceLineItem line_items = 12;
+  google.protobuf.Timestamp created_at = 13;
+  google.protobuf.Timestamp updated_at = 14;
+  string tenant_id = 15;
+
+  reserved 50 to 100;
+}
+
+message InvoiceLineItem {
+  string description = 1;
+  string quantity = 2; // decimal string for precision
+  string unit_price = 3; // decimal string for precision
+  string tax_rate = 4; // decimal string for precision (e.g. "0.23")
+  string net_amount = 5; // decimal string for precision
+  string gross_amount = 6; // decimal string for precision
+
+  reserved 50 to 100;
+}
+
+message GenerateInvoiceRequest {
+  string issuer_id = 1;
+  string recipient_id = 2;
+  google.protobuf.Timestamp due_date = 3;
+  string currency = 4;
+  repeated InvoiceLineItem line_items = 5;
+  string idempotency_key = 6;
+  string tenant_id = 7;
+
+  reserved 50 to 100;
+}
+
+message GenerateInvoiceResponse {
+  InvoiceResponse invoice = 1;
+
+  reserved 50 to 100;
+}

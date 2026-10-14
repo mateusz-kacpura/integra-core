@@ -1,0 +1,63 @@
+syntax = "proto3";
+
+package accounting.v1;
+
+import "google/protobuf/timestamp.proto";
+
+option go_package = "github.com/mateusz-kacpura/integra/integra-proto/gen/go/accounting/v1;accountingv1";
+
+// LedgerService manages the double-entry general ledger and financial transactions.
+service LedgerService {
+  // GetTrueBalance returns the current true balance for an account.
+  rpc GetTrueBalance(GetTrueBalanceRequest) returns (GetTrueBalanceResponse);
+  // RecordTransaction records a financial transaction in the ledger.
+  rpc RecordTransaction(RecordTransactionRequest) returns (RecordTransactionResponse);
+}
+
+enum ReferenceType {
+  REFERENCE_TYPE_UNSPECIFIED = 0;
+  REFERENCE_TYPE_INVOICE = 1;
+  REFERENCE_TYPE_PAYMENT = 2;
+  REFERENCE_TYPE_ADJUSTMENT = 3;
+}
+
+message GetTrueBalanceRequest {
+  string account_id = 1;
+  string tenant_id = 2;
+
+  reserved 50 to 100;
+}
+
+message GetTrueBalanceResponse {
+  string account_id = 1;
+  string balance = 2; // decimal string for precision
+  string currency = 3;
+  google.protobuf.Timestamp as_of = 4;
+  string tenant_id = 5;
+  uint64 version = 6;
+
+  reserved 50 to 100;
+}
+
+message RecordTransactionRequest {
+  string debit_account_id = 1;
+  string credit_account_id = 2;
+  string amount = 3; // decimal string for precision
+  string currency = 4;
+  string description = 5;
+  ReferenceType reference_type = 6;
+  string reference_id = 7;
+  string idempotency_key = 8;
+  string tenant_id = 9;
+  optional uint64 expected_debit_version = 10;
+  optional uint64 expected_credit_version = 11;
+
+  reserved 50 to 100;
+}
+
+message RecordTransactionResponse {
+  string transaction_id = 1;
+  google.protobuf.Timestamp recorded_at = 2;
+
+  reserved 50 to 100;
+}
