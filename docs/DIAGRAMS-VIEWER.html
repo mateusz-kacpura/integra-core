@@ -1,0 +1,1032 @@
+<!DOCTYPE html>
+<html lang="pl">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Integra Platform – Pełnoekranowa przeglądarka schematów architektonicznych</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;600&display=swap" rel="stylesheet">
+  <script src="https://cdn.jsdelivr.net/npm/mermaid@10/dist/mermaid.min.js"></script>
+  <style>
+    :root {
+      --bg-base: #090d16;
+      --bg-surface: #0f172a;
+      --bg-card: #141e33;
+      --border-color: #1e293b;
+      --border-focus: #3b82f6;
+      --text-main: #f1f5f9;
+      --text-muted: #94a3b8;
+      --primary: #3b82f6;
+      --primary-hover: #2563eb;
+      --accent: #10b981;
+      --radius-lg: 14px;
+      --radius-md: 8px;
+    }
+
+    * {
+      box-sizing: border-box;
+      margin: 0;
+      padding: 0;
+    }
+
+    body {
+      font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
+      background: radial-gradient(circle at 50% 0%, #1e1b4b 0%, var(--bg-base) 45%);
+      color: var(--text-main);
+      min-height: 100vh;
+      line-height: 1.5;
+      padding-bottom: 80px;
+    }
+
+    header {
+      background: rgba(15, 23, 42, 0.85);
+      backdrop-filter: blur(16px);
+      border-bottom: 1px solid var(--border-color);
+      position: sticky;
+      top: 0;
+      z-index: 100;
+      padding: 16px 32px;
+    }
+
+    .header-content {
+      max-width: 1440px;
+      margin: 0 auto;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      flex-wrap: wrap;
+      gap: 16px;
+    }
+
+    .brand-title {
+      font-size: 20px;
+      font-weight: 800;
+      letter-spacing: -0.02em;
+      background: linear-gradient(135deg, #60a5fa, #a78bfa);
+      -webkit-background-clip: text;
+      -webkit-text-fill-color: transparent;
+      display: flex;
+      align-items: center;
+      gap: 10px;
+    }
+
+    .brand-sub {
+      font-size: 13px;
+      color: var(--text-muted);
+      font-weight: 500;
+      margin-top: 2px;
+    }
+
+    .nav-bar {
+      max-width: 1440px;
+      margin: 16px auto 0 auto;
+      display: flex;
+      gap: 8px;
+      overflow-x: auto;
+      padding-bottom: 8px;
+      scrollbar-width: thin;
+    }
+
+    .nav-pill {
+      background: #1e293b;
+      color: var(--text-muted);
+      text-decoration: none;
+      font-size: 12px;
+      font-weight: 600;
+      padding: 6px 14px;
+      border-radius: 9999px;
+      white-space: nowrap;
+      border: 1px solid transparent;
+      transition: all 0.2s ease;
+    }
+
+    .nav-pill:hover, .nav-pill.active {
+      background: #2563eb;
+      color: #ffffff;
+      border-color: #60a5fa;
+    }
+
+    main {
+      max-width: 1440px;
+      margin: 32px auto;
+      padding: 0 24px;
+      display: flex;
+      flex-direction: column;
+      gap: 36px;
+    }
+
+    .diagram-card {
+      background: var(--bg-card);
+      border: 1px solid var(--border-color);
+      border-radius: var(--radius-lg);
+      overflow: hidden;
+      box-shadow: 0 10px 25px -5px rgba(0, 0, 0, 0.5);
+      transition: border-color 0.2s, box-shadow 0.2s;
+      display: flex;
+      flex-direction: column;
+    }
+
+    .diagram-card:focus-within {
+      border-color: var(--border-focus);
+    }
+
+    .card-header {
+      background: rgba(15, 23, 42, 0.7);
+      padding: 16px 24px;
+      border-bottom: 1px solid var(--border-color);
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      flex-wrap: wrap;
+      gap: 16px;
+    }
+
+    .card-title-group {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+    }
+
+    .badge {
+      background: rgba(59, 130, 246, 0.2);
+      color: #93c5fd;
+      border: 1px solid rgba(59, 130, 246, 0.4);
+      font-size: 11px;
+      font-weight: 700;
+      padding: 4px 10px;
+      border-radius: 9999px;
+      text-transform: uppercase;
+      letter-spacing: 0.05em;
+    }
+
+    .card-title {
+      font-size: 17px;
+      font-weight: 700;
+      color: #f8fafc;
+    }
+
+    .card-actions {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+
+    .btn {
+      font-family: inherit;
+      font-size: 12px;
+      font-weight: 600;
+      padding: 8px 14px;
+      border-radius: var(--radius-md);
+      cursor: pointer;
+      border: 1px solid transparent;
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      transition: all 0.15s ease-in-out;
+    }
+
+    .btn-secondary {
+      background: #1e293b;
+      color: #cbd5e1;
+      border-color: #334155;
+    }
+    .btn-secondary:hover {
+      background: #334155;
+      color: #ffffff;
+    }
+
+    .btn-primary {
+      background: var(--primary);
+      color: #ffffff;
+    }
+    .btn-primary:hover {
+      background: var(--primary-hover);
+      box-shadow: 0 0 12px rgba(59, 130, 246, 0.5);
+    }
+
+    .btn-outline {
+      background: transparent;
+      color: #94a3b8;
+      border-color: #334155;
+    }
+    .btn-outline:hover {
+      color: #f1f5f9;
+      border-color: #64748b;
+    }
+
+    .icon {
+      width: 15px;
+      height: 15px;
+    }
+
+    .viewport-container {
+      position: relative;
+      width: 100%;
+      height: 600px;
+      background: #0b1120;
+      overflow: hidden;
+      cursor: grab;
+      user-select: none;
+    }
+
+    .viewport-container:active {
+      cursor: grabbing;
+    }
+
+    /* FULLSCREEN STYLING */
+    .diagram-card:fullscreen {
+      width: 100vw;
+      height: 100vh;
+      border-radius: 0;
+      border: none;
+      background: #090d16;
+    }
+
+    .diagram-card:fullscreen .viewport-container {
+      height: calc(100vh - 120px);
+    }
+
+    .panzoom-layer {
+      position: absolute;
+      top: 0;
+      left: 0;
+      transform-origin: 0 0;
+      will-change: transform;
+      padding: 40px;
+      display: inline-block;
+      min-width: 100%;
+      min-height: 100%;
+      box-sizing: border-box;
+    }
+
+    .mermaid {
+      display: flex;
+      justify-content: center;
+      align-items: center;
+    }
+
+    .mermaid svg {
+      max-width: none !important;
+      height: auto;
+      filter: drop-shadow(0 4px 12px rgba(0, 0, 0, 0.3));
+    }
+
+    .card-footer {
+      background: rgba(15, 23, 42, 0.5);
+      border-top: 1px solid var(--border-color);
+      padding: 10px 24px;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+    }
+
+    .hint {
+      font-size: 11px;
+      color: #64748b;
+      font-family: 'JetBrains Mono', monospace;
+    }
+  </style>
+</head>
+<body>
+
+  <header>
+    <div class="header-content">
+      <div>
+        <div class="brand-title">
+          <span>⚡ Integra Platform</span>
+          <span style="font-size: 12px; font-weight: 600; color: #10b981; background: rgba(16, 185, 129, 0.15); border: 1px solid rgba(16, 185, 129, 0.3); padding: 2px 8px; border-radius: 6px;">Enterprise + Open-Core</span>
+        </div>
+        <div class="brand-sub">Interaktywny podgląd schematów architektonicznych, przepływów i benchmarków w trybie pełnoekranowym</div>
+      </div>
+      <div>
+        <button class="btn btn-secondary" onclick="window.location.reload()">Odśwież diagramy</button>
+      </div>
+    </div>
+    <div class="nav-bar">
+      <a href="#" class="nav-pill active" onclick="showAll()">Wszystkie (9)</a>
+      <a href="#diag-1" class="nav-pill" onclick="filterDiagram('diag-1')">1. Wykres 1</a><a href="#diag-2" class="nav-pill" onclick="filterDiagram('diag-2')">2. Wykres 2</a><a href="#diag-3" class="nav-pill" onclick="filterDiagram('diag-3')">3. 3.1. Architektura ekosystemu i infras...</a><a href="#diag-4" class="nav-pill" onclick="filterDiagram('diag-4')">4. 3.2. Architektura zależności modułów ...</a><a href="#diag-5" class="nav-pill" onclick="filterDiagram('diag-5')">5. 3.3. Wewnętrzna architektura czysta /...</a><a href="#diag-6" class="nav-pill" onclick="filterDiagram('diag-6')">6. 4.1. Przepływ 1</a><a href="#diag-7" class="nav-pill" onclick="filterDiagram('diag-7')">7. 4.2. Przepływ 2</a><a href="#diag-8" class="nav-pill" onclick="filterDiagram('diag-8')">8. 4.3. Przepływ 3</a><a href="#diag-9" class="nav-pill" onclick="filterDiagram('diag-9')">9. 4.4. Przepływ 4</a>
+    </div>
+  </header>
+
+  <main id="main-content">
+    
+    <section class="diagram-card" id="diag-1">
+      <div class="card-header">
+        <div class="card-title-group">
+          <span class="badge">Schemat 1</span>
+          <h2 class="card-title">Wykres 1: Top 15 przyspieszeń wydajnościowych (% redukcji czasu wykonania vs Baseline)</h2>
+        </div>
+        <div class="card-actions">
+          <button class="btn btn-secondary" onclick="zoomIn('diag-1')" title="Przybliż">+</button>
+          <button class="btn btn-secondary" onclick="zoomOut('diag-1')" title="Oddal">−</button>
+          <button class="btn btn-secondary" onclick="resetZoom('diag-1')" title="Resetuj widok">↺ 100%</button>
+          <button class="btn btn-primary" onclick="toggleFullscreen('diag-1')" title="Otwórz na pełnym ekranie">
+            <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <path d="M8 3H5a2 2 0 0 0-2 2v3m18 0V5a2 2 0 0 0-2-2h-3m0 18h3a2 2 0 0 0 2-2v-3M3 16v3a2 2 0 0 0 2 2h3"/>
+            </svg>
+            Pełny ekran
+          </button>
+          <button class="btn btn-outline" onclick="exportSvg('diag-1', 'schemat-1.svg')" title="Pobierz wektorowy SVG">Eksportuj SVG</button>
+        </div>
+      </div>
+      <div class="viewport-container" id="viewport-diag-1">
+        <div class="panzoom-layer" id="layer-diag-1">
+          <pre class="mermaid" id="mermaid-diag-1">xychart-beta
+    title &quot;Top 15 optymalizacji w monorepo Integra (% przyspieszenia vs baseline)&quot;
+    x-axis [&quot;1&quot;, &quot;2&quot;, &quot;3&quot;, &quot;4&quot;, &quot;5&quot;, &quot;6&quot;, &quot;7&quot;, &quot;8&quot;, &quot;9&quot;, &quot;10&quot;, &quot;11&quot;, &quot;12&quot;, &quot;13&quot;, &quot;14&quot;, &quot;15&quot;]
+    y-axis &quot;Przyspieszenie (%)&quot; 0 --&gt; 80
+    bar [72.4, 59.0, 58.1, 57.0, 42.6, 32.5, 30.7, 30.2, 30.1, 27.0, 26.3, 25.8, 23.0, 21.3, 20.4]</pre>
+        </div>
+      </div>
+      <div class="card-footer">
+        <span class="hint">Wskazówka: Kółko myszy = zoom | Przeciąganie myszą = przesuwanie | Klawisz Esc = wyjście z pełnego ekranu</span>
+      </div>
+    </section>
+    
+    <section class="diagram-card" id="diag-2">
+      <div class="card-header">
+        <div class="card-title-group">
+          <span class="badge">Schemat 2</span>
+          <h2 class="card-title">Wykres 2: Porównanie czasu weryfikacji autoryzacji i dostępu do danych (ns/op)</h2>
+        </div>
+        <div class="card-actions">
+          <button class="btn btn-secondary" onclick="zoomIn('diag-2')" title="Przybliż">+</button>
+          <button class="btn btn-secondary" onclick="zoomOut('diag-2')" title="Oddal">−</button>
+          <button class="btn btn-secondary" onclick="resetZoom('diag-2')" title="Resetuj widok">↺ 100%</button>
+          <button class="btn btn-primary" onclick="toggleFullscreen('diag-2')" title="Otwórz na pełnym ekranie">
+            <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <path d="M8 3H5a2 2 0 0 0-2 2v3m18 0V5a2 2 0 0 0-2-2h-3m0 18h3a2 2 0 0 0 2-2v-3M3 16v3a2 2 0 0 0 2 2h3"/>
+            </svg>
+            Pełny ekran
+          </button>
+          <button class="btn btn-outline" onclick="exportSvg('diag-2', 'schemat-2.svg')" title="Pobierz wektorowy SVG">Eksportuj SVG</button>
+        </div>
+      </div>
+      <div class="viewport-container" id="viewport-diag-2">
+        <div class="panzoom-layer" id="layer-diag-2">
+          <pre class="mermaid" id="mermaid-diag-2">xychart-beta
+    title &quot;Porównanie czasu operacji na gorących ścieżkach (ns/op – mniej = lepiej)&quot;
+    x-axis [&quot;1&quot;, &quot;2&quot;, &quot;3&quot;, &quot;4&quot;, &quot;5&quot;, &quot;6&quot;, &quot;7&quot;, &quot;8&quot;, &quot;9&quot;, &quot;10&quot;, &quot;11&quot;, &quot;12&quot;]
+    y-axis &quot;Czas wykonania (ns/op)&quot; 0 --&gt; 700
+    bar [3.9, 4.4, 19.1, 21.9, 25.3, 36.5, 46.2, 71.4, 90.6, 102.0, 530.8, 632.6]</pre>
+        </div>
+      </div>
+      <div class="card-footer">
+        <span class="hint">Wskazówka: Kółko myszy = zoom | Przeciąganie myszą = przesuwanie | Klawisz Esc = wyjście z pełnego ekranu</span>
+      </div>
+    </section>
+    
+    <section class="diagram-card" id="diag-3">
+      <div class="card-header">
+        <div class="card-title-group">
+          <span class="badge">Schemat 3</span>
+          <h2 class="card-title">3.1. Architektura ekosystemu i infrastruktury (Edge, Gateways, Services, Data &amp; Observability)</h2>
+        </div>
+        <div class="card-actions">
+          <button class="btn btn-secondary" onclick="zoomIn('diag-3')" title="Przybliż">+</button>
+          <button class="btn btn-secondary" onclick="zoomOut('diag-3')" title="Oddal">−</button>
+          <button class="btn btn-secondary" onclick="resetZoom('diag-3')" title="Resetuj widok">↺ 100%</button>
+          <button class="btn btn-primary" onclick="toggleFullscreen('diag-3')" title="Otwórz na pełnym ekranie">
+            <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <path d="M8 3H5a2 2 0 0 0-2 2v3m18 0V5a2 2 0 0 0-2-2h-3m0 18h3a2 2 0 0 0 2-2v-3M3 16v3a2 2 0 0 0 2 2h3"/>
+            </svg>
+            Pełny ekran
+          </button>
+          <button class="btn btn-outline" onclick="exportSvg('diag-3', 'schemat-3.svg')" title="Pobierz wektorowy SVG">Eksportuj SVG</button>
+        </div>
+      </div>
+      <div class="viewport-container" id="viewport-diag-3">
+        <div class="panzoom-layer" id="layer-diag-3">
+          <pre class="mermaid" id="mermaid-diag-3">graph TB
+    subgraph External[&quot;Klienci zewnętrzni i urządzenia&quot;]
+        WebClient[&quot;Aplikacje Web / Mobile&lt;br/&gt;(api.integra.com)&quot;]
+        AdminClient[&quot;Panel Administracyjny&lt;br/&gt;(admin.integra.com)&quot;]
+        IoTDevice[&quot;Terminale NFC / IoT RDC&lt;br/&gt;(iot.integra.com)&quot;]
+    end
+
+    subgraph EdgeLayer[&quot;Warstwa brzegowa (integra-infra/deploy/edge)&quot;]
+        BunkerWeb[&quot;BunkerWeb WAF + ModSecurity&lt;br/&gt;(AntiBot, Rate Limit 100r/s, IP Blacklist, Let&#x27;s Encrypt TLS/HTTP2)&quot;]
+        PubGW[&quot;Public Gateway&lt;br/&gt;(:8080)&quot;]
+        AdmGW[&quot;Admin Gateway&lt;br/&gt;(:8081)&quot;]
+        IoTGW[&quot;IoT Gateway&lt;br/&gt;(:8082)&quot;]
+    end
+
+    subgraph K8sMesh[&quot;Klaster Kubernetes / EKS + Linkerd mTLS Service Mesh (namespace: integra)&quot;]
+        subgraph IAM[&quot;integra-iam-service&quot;]
+            IAM_Srv[&quot;IAM Server&lt;br/&gt;(HTTP :8081 / gRPC :9081)&quot;]
+            IAM_Wrk[&quot;IAM Outbox &amp; Purge Worker&quot;]
+            IAM_Adm[&quot;IAM Admin CLI&quot;]
+        end
+
+        subgraph USER[&quot;integra-user-service&quot;]
+            USR_Srv[&quot;User Server&lt;br/&gt;(HTTP :8082 / gRPC :9082)&quot;]
+            USR_Wrk[&quot;User Kafka &amp; Outbox Worker&quot;]
+        end
+
+        subgraph LEDGER[&quot;integra-ledger-service&quot;]
+            LDG_Srv[&quot;Ledger Server&lt;br/&gt;(HTTP :8085 / gRPC :9085)&quot;]
+            LDG_Wrk[&quot;Ledger Outbox &amp; Snapshot Worker&quot;]
+            LDG_Cat[&quot;Project-Catchup CLI&quot;]
+        end
+    end
+
+    subgraph DataLayer[&quot;Warstwa danych i komunikacji (AWS RDS, DocumentDB, ElastiCache, MSK)&quot;]
+        PG_IAM[(&quot;PostgreSQL 18&lt;br/&gt;Schema: iam&quot;)]
+        PG_USR[(&quot;PostgreSQL 18&lt;br/&gt;Schema: users&quot;)]
+        PG_LDG[(&quot;PostgreSQL 18&lt;br/&gt;Schema: ledger&quot;)]
+        Mongo[(&quot;MongoDB 8 / DocumentDB&lt;br/&gt;(Sesje Auth &amp; Password Reset)&quot;)]
+        Valkey[(&quot;Valkey 9 / ElastiCache&lt;br/&gt;(L2 Security State, Leases, Claims Cache)&quot;)]
+        Kafka{{&quot;Apache Kafka / AWS MSK&lt;br/&gt;(38 Kanonicznych Tematów Zdarzeń)&quot;}}
+    end
+
+    subgraph ObsLayer[&quot;Warstwa obserwowalności (integra-infra/monitoring)&quot;]
+        OTel[&quot;Jaeger / OpenTelemetry&lt;br/&gt;(W3C Distributed Tracing :4318)&quot;]
+        Prom[&quot;Prometheus + Alertmanager&lt;br/&gt;(Metryki &amp; Reguły Alertów)&quot;]
+        Loki[&quot;Fluentd + Grafana Loki&lt;br/&gt;(Logi z Sanityzacją PII)&quot;]
+        Grafana[&quot;Grafana Dashboards&lt;br/&gt;(Overview, IAM, User, Ledger)&quot;]
+    end
+
+    WebClient --&gt; BunkerWeb
+    AdminClient --&gt; BunkerWeb
+    IoTDevice --&gt; BunkerWeb
+
+    BunkerWeb --&gt; PubGW
+    BunkerWeb --&gt; AdmGW
+    BunkerWeb --&gt; IoTGW
+
+    PubGW --&gt; IAM_Srv
+    PubGW --&gt; USR_Srv
+    PubGW --&gt; LDG_Srv
+    AdmGW --&gt; IAM_Srv
+    IoTGW --&gt; USR_Srv
+
+    IAM_Srv &lt;--&gt;|gRPC / ConnectRPC| USR_Srv
+    IAM_Srv &lt;--&gt;|gRPC / ConnectRPC| LDG_Srv
+
+    IAM_Srv --&gt; PG_IAM
+    IAM_Srv --&gt; Mongo
+    IAM_Srv --&gt; Valkey
+    IAM_Wrk --&gt; PG_IAM
+    IAM_Wrk --&gt; Kafka
+
+    USR_Srv --&gt; PG_USR
+    USR_Srv --&gt; Valkey
+    USR_Wrk &lt;--&gt; Kafka
+    USR_Wrk --&gt; PG_USR
+
+    LDG_Srv --&gt; PG_LDG
+    LDG_Srv --&gt; Valkey
+    LDG_Wrk &lt;--&gt; Kafka
+    LDG_Wrk --&gt; PG_LDG
+    LDG_Cat --&gt; PG_LDG
+
+    IAM_Srv -.-&gt; OTel
+    USR_Srv -.-&gt; OTel
+    LDG_Srv -.-&gt; OTel
+    Prom -.-&gt; IAM_Srv
+    Prom -.-&gt; USR_Srv
+    Prom -.-&gt; LDG_Srv
+    Grafana --&gt; Prom
+    Grafana --&gt; Loki
+    Grafana --&gt; OTel
+</pre>
+        </div>
+      </div>
+      <div class="card-footer">
+        <span class="hint">Wskazówka: Kółko myszy = zoom | Przeciąganie myszą = przesuwanie | Klawisz Esc = wyjście z pełnego ekranu</span>
+      </div>
+    </section>
+    
+    <section class="diagram-card" id="diag-4">
+      <div class="card-header">
+        <div class="card-title-group">
+          <span class="badge">Schemat 4</span>
+          <h2 class="card-title">3.2. Architektura zależności modułów Go Workspace (go.work) i podział Open-Core</h2>
+        </div>
+        <div class="card-actions">
+          <button class="btn btn-secondary" onclick="zoomIn('diag-4')" title="Przybliż">+</button>
+          <button class="btn btn-secondary" onclick="zoomOut('diag-4')" title="Oddal">−</button>
+          <button class="btn btn-secondary" onclick="resetZoom('diag-4')" title="Resetuj widok">↺ 100%</button>
+          <button class="btn btn-primary" onclick="toggleFullscreen('diag-4')" title="Otwórz na pełnym ekranie">
+            <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <path d="M8 3H5a2 2 0 0 0-2 2v3m18 0V5a2 2 0 0 0-2-2h-3m0 18h3a2 2 0 0 0 2-2v-3M3 16v3a2 2 0 0 0 2 2h3"/>
+            </svg>
+            Pełny ekran
+          </button>
+          <button class="btn btn-outline" onclick="exportSvg('diag-4', 'schemat-4.svg')" title="Pobierz wektorowy SVG">Eksportuj SVG</button>
+        </div>
+      </div>
+      <div class="viewport-container" id="viewport-diag-4">
+        <div class="panzoom-layer" id="layer-diag-4">
+          <pre class="mermaid" id="mermaid-diag-4">graph TD
+    subgraph Monorepo[&quot;Go 1.26 Workspace (go.work)&quot;]
+        Examples[&quot;examples&lt;br/&gt;(jwt-auth, sqlrouting-l1)&quot;]
+        IAM[&quot;integra-iam-service&quot;]
+        USER[&quot;integra-user-service&quot;]
+        LEDGER[&quot;integra-ledger-service&quot;]
+
+        Shared[&quot;integra-shared-go&lt;br/&gt;(Auth L1/L2, Crypto ChaCha20, RBAC,&lt;br/&gt;Outbox, Kafka, SecurityState, Telemetry)&quot;]
+        PGAdapters[&quot;integra-postgres-adapters&lt;br/&gt;(sqlrouting L1 + sqlc dbgen)&quot;]
+        Proto[&quot;integra-proto&lt;br/&gt;(Buf v2: iam/v1, user/v1, accounting/v1)&quot;]
+    end
+
+    subgraph OpenCore[&quot;.dist/integra-core (eksport Apache 2.0)&quot;]
+        OC_Pkg[&quot;pkg/*&lt;br/&gt;(config, contracts, health, jsoncodec,&lt;br/&gt;logger, pagination, response, telemetry, topics, uuidgen)&quot;]
+        OC_Proto[&quot;proto/*&lt;br/&gt;(iam/v1, user/v1, accounting/v1)&quot;]
+    end
+
+    Examples --&gt; Shared
+    Examples --&gt; PGAdapters
+
+    IAM --&gt; Shared
+    IAM --&gt; PGAdapters
+    IAM --&gt; Proto
+
+    USER --&gt; Shared
+    USER --&gt; PGAdapters
+    USER --&gt; Proto
+
+    LEDGER --&gt; Shared
+    LEDGER --&gt; PGAdapters
+    LEDGER --&gt; Proto
+
+    Shared --&gt; PGAdapters
+    Shared --&gt; Proto
+
+    Shared -. &quot;scripts/Prepare-OpenCoreSplit.py&quot; .-&gt; OC_Pkg
+    Proto -. &quot;scripts/Prepare-OpenCoreSplit.py&quot; .-&gt; OC_Proto
+</pre>
+        </div>
+      </div>
+      <div class="card-footer">
+        <span class="hint">Wskazówka: Kółko myszy = zoom | Przeciąganie myszą = przesuwanie | Klawisz Esc = wyjście z pełnego ekranu</span>
+      </div>
+    </section>
+    
+    <section class="diagram-card" id="diag-5">
+      <div class="card-header">
+        <div class="card-title-group">
+          <span class="badge">Schemat 5</span>
+          <h2 class="card-title">3.3. Wewnętrzna architektura czysta / heksagonalna + CQRS mikroserwisów</h2>
+        </div>
+        <div class="card-actions">
+          <button class="btn btn-secondary" onclick="zoomIn('diag-5')" title="Przybliż">+</button>
+          <button class="btn btn-secondary" onclick="zoomOut('diag-5')" title="Oddal">−</button>
+          <button class="btn btn-secondary" onclick="resetZoom('diag-5')" title="Resetuj widok">↺ 100%</button>
+          <button class="btn btn-primary" onclick="toggleFullscreen('diag-5')" title="Otwórz na pełnym ekranie">
+            <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <path d="M8 3H5a2 2 0 0 0-2 2v3m18 0V5a2 2 0 0 0-2-2h-3m0 18h3a2 2 0 0 0 2-2v-3M3 16v3a2 2 0 0 0 2 2h3"/>
+            </svg>
+            Pełny ekran
+          </button>
+          <button class="btn btn-outline" onclick="exportSvg('diag-5', 'schemat-5.svg')" title="Pobierz wektorowy SVG">Eksportuj SVG</button>
+        </div>
+      </div>
+      <div class="viewport-container" id="viewport-diag-5">
+        <div class="panzoom-layer" id="layer-diag-5">
+          <pre class="mermaid" id="mermaid-diag-5">flowchart TB
+    subgraph Transport[&quot;Warstwa transportu (internal/transport)&quot;]
+        REST[&quot;REST API (Gin + Sonic JSON)&lt;br/&gt;Middleware: Telemetry, RateLimit, Idempotency, Auth, RBAC&quot;]
+        GRPC[&quot;gRPC / ConnectRPC Server&lt;br/&gt;(Walidacja kontraktów Protobuf)&quot;]
+        KafkaIn[&quot;Kafka Consumer&lt;br/&gt;(Odbiór zdarzeń domenowych)&quot;]
+    end
+
+    subgraph AppLayer[&quot;Warstwa aplikacji CQRS (internal/app)&quot;]
+        Access[&quot;AccessService&lt;br/&gt;(Autoryzacja tożsamości, tenanta i licencji)&quot;]
+        Cmds[&quot;Commands (internal/app/commands)&lt;br/&gt;Mutacje stanu i przypadki użycia&quot;]
+        Qrys[&quot;Queries (internal/app/queries)&lt;br/&gt;Odczyty projekcji i modeli&quot;]
+        Ports[&quot;Ports (internal/app/ports)&lt;br/&gt;Interfejsy repozytoriów, autorytetu i audytu&quot;]
+    end
+
+    subgraph DomainLayer[&quot;Warstwa domeny (internal/domain)&quot;]
+        Agg[&quot;Agregaty i Encje&lt;br/&gt;(User, Profile, LedgerAggregate, Money, Invoice)&quot;]
+        Events[&quot;Zdarzenia Domenowe &amp; Inwarianty&lt;br/&gt;(Zero zależności od I/O, HTTP czy SQL)&quot;]
+    end
+
+    subgraph InfraLayer[&quot;Warstwa infrastruktury (internal/infrastructure)&quot;]
+        PG[&quot;PostgreSQL Repository (pgx/v5 + sqlc)&lt;br/&gt;Unit of Work / Single-CTE Atomic Commit&quot;]
+        MG[&quot;MongoDB Repository&lt;br/&gt;(Sesje Auth, Tokeny Refresh, Reset Haseł)&quot;]
+        VK[&quot;Valkey Adapter&lt;br/&gt;(L2 Claims Cache, SecurityState, Leases)&quot;]
+        OB[&quot;Transactional Outbox Worker&lt;br/&gt;(Publikacja at-least-once do Kafka)&quot;]
+    end
+
+    REST --&gt; Access
+    GRPC --&gt; Access
+    KafkaIn --&gt; Cmds
+    Access --&gt; Cmds
+    Access --&gt; Qrys
+    Cmds --&gt; Agg
+    Cmds --&gt; Events
+    Cmds --&gt; Ports
+    Qrys --&gt; Ports
+    PG -. &quot;implementuje&quot; .-&gt; Ports
+    MG -. &quot;implementuje&quot; .-&gt; Ports
+    VK -. &quot;implementuje&quot; .-&gt; Ports
+    OB --&gt; PG
+</pre>
+        </div>
+      </div>
+      <div class="card-footer">
+        <span class="hint">Wskazówka: Kółko myszy = zoom | Przeciąganie myszą = przesuwanie | Klawisz Esc = wyjście z pełnego ekranu</span>
+      </div>
+    </section>
+    
+    <section class="diagram-card" id="diag-6">
+      <div class="card-header">
+        <div class="card-title-group">
+          <span class="badge">Schemat 6</span>
+          <h2 class="card-title">4.1. Przepływ 1: Wielopoziomowa weryfikacja tokena JWT i stanu bezpieczeństwa (L1 -&gt; L2 -&gt; L3)</h2>
+        </div>
+        <div class="card-actions">
+          <button class="btn btn-secondary" onclick="zoomIn('diag-6')" title="Przybliż">+</button>
+          <button class="btn btn-secondary" onclick="zoomOut('diag-6')" title="Oddal">−</button>
+          <button class="btn btn-secondary" onclick="resetZoom('diag-6')" title="Resetuj widok">↺ 100%</button>
+          <button class="btn btn-primary" onclick="toggleFullscreen('diag-6')" title="Otwórz na pełnym ekranie">
+            <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <path d="M8 3H5a2 2 0 0 0-2 2v3m18 0V5a2 2 0 0 0-2-2h-3m0 18h3a2 2 0 0 0 2-2v-3M3 16v3a2 2 0 0 0 2 2h3"/>
+            </svg>
+            Pełny ekran
+          </button>
+          <button class="btn btn-outline" onclick="exportSvg('diag-6', 'schemat-6.svg')" title="Pobierz wektorowy SVG">Eksportuj SVG</button>
+        </div>
+      </div>
+      <div class="viewport-container" id="viewport-diag-6">
+        <div class="panzoom-layer" id="layer-diag-6">
+          <pre class="mermaid" id="mermaid-diag-6">sequenceDiagram
+    autonumber
+    actor Client as Klient API
+    participant MW as Gin Auth Middleware
+    participant L1 as L1 In-Process Cache&lt;br/&gt;(32 Shardy, CacheLinePad, TTL 500ms)
+    participant Ed as Weryfikator Ed25519&lt;br/&gt;(CPU Crypto)
+    participant VK as L2 Valkey Cluster&lt;br/&gt;(ChaCha20-Poly1305 + Lua Lease 1s)
+    participant PG as L3 PostgreSQL&lt;br/&gt;(Reconciler Worker)
+
+    Client-&gt;&gt;MW: Żądanie HTTP z nagłówkiem Authorization: Bearer &lt;JWT&gt;
+    MW-&gt;&gt;L1: Pobranie roszczeń (FNV-1a shard hash, 0 alokacji)
+    alt L1 CACHE HIT (&lt; 500ms, ~36.5 ns)
+        L1--&gt;&gt;MW: Zwrócenie *auth.Claims z pamięci L1 CPU
+    else L1 CACHE MISS lub wpis wygasł
+        MW-&gt;&gt;VK: Sprawdzenie zaszyfrowanych Claims w L2 (XChaCha20-Poly1305)
+        alt L2 CLAIMS HIT
+            VK--&gt;&gt;MW: Zaszyfrowany blob -&gt; Odszyfrowanie ChaCha20 (~311 ns)
+        else L2 CLAIMS MISS
+            MW-&gt;&gt;Ed: Weryfikacja podpisu asymetrycznego Ed25519 (~60 µs)
+            Ed--&gt;&gt;MW: Poprawne *auth.Claims
+            MW-&gt;&gt;VK: Zapis zaszyfrowanych Claims (ChaCha20-Poly1305)
+        end
+        MW-&gt;&gt;L1: Zapis w lokalnym L1 Cache (TTL = 500ms &lt; 1s Lease)
+    end
+
+    MW-&gt;&gt;VK: Skrypt Lua accountCheck (HGET {auth:user-status}:snapshot)
+    alt Dzierżawa (Lease 1s) aktywna i konto != &quot;blocked&quot;
+        VK--&gt;&gt;MW: Status = 1 (OK)
+        MW--&gt;&gt;Client: Autoryzacja pomyślna (Kontynuacja żądania)
+    else Konto zablokowane (Status = 0)
+        VK--&gt;&gt;MW: Status = 0 (ErrUnauthorized)
+        MW--&gt;&gt;Client: HTTP 401 Unauthorized
+    else Brak dzierżawy / Wygasła (&gt;1s) / Awaria Valkey (Status = -1)
+        VK--&gt;&gt;MW: ErrUnavailable (Tryb Fail-Closed!)
+        MW--&gt;&gt;Client: HTTP 503 Service Unavailable (Bezpieczne odrzucenie)
+        Note over PG,VK: Background Worker cyklicznie odnawia&lt;br/&gt;1-sekundowy Lease z tabel PostgreSQL
+    end
+</pre>
+        </div>
+      </div>
+      <div class="card-footer">
+        <span class="hint">Wskazówka: Kółko myszy = zoom | Przeciąganie myszą = przesuwanie | Klawisz Esc = wyjście z pełnego ekranu</span>
+      </div>
+    </section>
+    
+    <section class="diagram-card" id="diag-7">
+      <div class="card-header">
+        <div class="card-title-group">
+          <span class="badge">Schemat 7</span>
+          <h2 class="card-title">4.2. Przepływ 2: Atomowe księgowanie podwójnego zapisu (Double-Entry Ledger Posting &amp; Idempotency)</h2>
+        </div>
+        <div class="card-actions">
+          <button class="btn btn-secondary" onclick="zoomIn('diag-7')" title="Przybliż">+</button>
+          <button class="btn btn-secondary" onclick="zoomOut('diag-7')" title="Oddal">−</button>
+          <button class="btn btn-secondary" onclick="resetZoom('diag-7')" title="Resetuj widok">↺ 100%</button>
+          <button class="btn btn-primary" onclick="toggleFullscreen('diag-7')" title="Otwórz na pełnym ekranie">
+            <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <path d="M8 3H5a2 2 0 0 0-2 2v3m18 0V5a2 2 0 0 0-2-2h-3m0 18h3a2 2 0 0 0 2-2v-3M3 16v3a2 2 0 0 0 2 2h3"/>
+            </svg>
+            Pełny ekran
+          </button>
+          <button class="btn btn-outline" onclick="exportSvg('diag-7', 'schemat-7.svg')" title="Pobierz wektorowy SVG">Eksportuj SVG</button>
+        </div>
+      </div>
+      <div class="viewport-container" id="viewport-diag-7">
+        <div class="panzoom-layer" id="layer-diag-7">
+          <pre class="mermaid" id="mermaid-diag-7">sequenceDiagram
+    autonumber
+    actor Caller as Klient / Usługa Zlecająca
+    participant Srv as Ledger Service (PostAccounts)
+    participant Dom as Domain (Money &amp; PostingHash)
+    participant DB as PostgreSQL (Schema: ledger)
+    participant Wrk as Outbox &amp; Snapshot Worker
+    participant Kafka as Broker Kafka
+
+    Caller-&gt;&gt;Srv: RecordTransaction (DebitID, CreditID, Amount, Currency, IdempotencyKey, ExpectedVersions)
+    Srv-&gt;&gt;Srv: Weryfikacja zgodności TenantID z kontekstem tożsamości
+    Srv-&gt;&gt;Dom: Obliczenie 33-bajtowego skrótu binarnego RequestDigest v2 (SHA-256, 200.9 ns, 0 B/op)
+    Dom--&gt;&gt;Srv: RequestDigest [33]byte
+
+    Srv-&gt;&gt;DB: BEGIN TRANSACTION
+    Srv-&gt;&gt;DB: ClaimAndLockPostingAccounts (Blokada wierszy FOR UPDATE + sprawdzenie IdempotencyKey)
+    alt IdempotencyKey już istnieje z tym samym RequestDigest
+        DB--&gt;&gt;Srv: Zwrócenie istniejącego TransactionID (Powtórzenie idempotentne)
+        Srv-&gt;&gt;DB: ROLLBACK
+        Srv--&gt;&gt;Caller: 200 OK (Istniejący TransactionID)
+    else IdempotencyKey istnieje z INNYM RequestDigest
+        DB--&gt;&gt;Srv: Błąd konfliktu parametrów
+        Srv-&gt;&gt;DB: ROLLBACK
+        Srv--&gt;&gt;Caller: 409 Conflict (Naruszenie kontraktu idempotentności)
+    else Nowa transakcja
+        Srv-&gt;&gt;Dom: Walidacja domenowa: Currency match, MinorUnits (int64), Optimistic Locking Versions
+        Srv-&gt;&gt;DB: Wykonanie pojedynczego zapytania CTE CommitPosting:
+        Note right of DB: 1. UPDATE ledger_accounts (Debit &amp; Credit, version + 1)&lt;br/&gt;2. INSERT INTO account_events (historia sald)&lt;br/&gt;3. INSERT INTO snapshot_jobs (jeśli version % interval == 0)&lt;br/&gt;4. INSERT INTO events (Event Store)&lt;br/&gt;5. INSERT INTO ledger_entries (dziennik księgowy)&lt;br/&gt;6. UPDATE posting_requests (Zapis wyniku idempotentnego)&lt;br/&gt;7. INSERT INTO outbox (Zdarzenie z nagłówkami W3C Trace)
+        DB--&gt;&gt;Srv: Zatwierdzony wiersz transakcji
+        Srv-&gt;&gt;DB: COMMIT TRANSACTION
+        Srv--&gt;&gt;Caller: 200 OK (TransactionID, RecordedAt)
+    end
+
+    par Asynchroniczna publikacja i migawki
+        Wrk-&gt;&gt;DB: Pobranie nieopublikowanych rekordów z ledger.outbox
+        Wrk-&gt;&gt;Kafka: Publikacja na temat &quot;ledger-updated&quot; (z propagacją traceparent &amp; correlation_id)
+        Wrk-&gt;&gt;DB: Oznaczenie published = true w ledger.outbox
+    and Budowanie migawek kont
+        Wrk-&gt;&gt;DB: Pobranie zadań z ledger.snapshot_jobs
+        Wrk-&gt;&gt;DB: Zapis skonsolidowanego AccountSnapshot (przyspieszenie odczytu 45.2x)
+    end
+</pre>
+        </div>
+      </div>
+      <div class="card-footer">
+        <span class="hint">Wskazówka: Kółko myszy = zoom | Przeciąganie myszą = przesuwanie | Klawisz Esc = wyjście z pełnego ekranu</span>
+      </div>
+    </section>
+    
+    <section class="diagram-card" id="diag-8">
+      <div class="card-header">
+        <div class="card-title-group">
+          <span class="badge">Schemat 8</span>
+          <h2 class="card-title">4.3. Przepływ 3: Rozproszona saga rejestracji użytkownika i synchronizacji replik odczytu (Outbox -&gt; Kafka -&gt; Read Replicas)</h2>
+        </div>
+        <div class="card-actions">
+          <button class="btn btn-secondary" onclick="zoomIn('diag-8')" title="Przybliż">+</button>
+          <button class="btn btn-secondary" onclick="zoomOut('diag-8')" title="Oddal">−</button>
+          <button class="btn btn-secondary" onclick="resetZoom('diag-8')" title="Resetuj widok">↺ 100%</button>
+          <button class="btn btn-primary" onclick="toggleFullscreen('diag-8')" title="Otwórz na pełnym ekranie">
+            <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <path d="M8 3H5a2 2 0 0 0-2 2v3m18 0V5a2 2 0 0 0-2-2h-3m0 18h3a2 2 0 0 0 2-2v-3M3 16v3a2 2 0 0 0 2 2h3"/>
+            </svg>
+            Pełny ekran
+          </button>
+          <button class="btn btn-outline" onclick="exportSvg('diag-8', 'schemat-8.svg')" title="Pobierz wektorowy SVG">Eksportuj SVG</button>
+        </div>
+      </div>
+      <div class="viewport-container" id="viewport-diag-8">
+        <div class="panzoom-layer" id="layer-diag-8">
+          <pre class="mermaid" id="mermaid-diag-8">flowchart LR
+    subgraph IAM[&quot;1. integra-iam-service&quot;]
+        Reg[&quot;Rejestracja / Zmiana Roli&lt;br/&gt;(PostgresUnitOfWork)&quot;]
+        IAM_DB[(&quot;iam.users&lt;br/&gt;iam.user_roles&lt;br/&gt;iam.outbox&quot;)]
+        IAM_Relay[&quot;IAM Outbox Worker&quot;]
+    end
+
+    subgraph Broker[&quot;2. Apache Kafka&quot;]
+        T_User[[&quot;Topic: user-events&quot;]]
+        T_Role[[&quot;Topic: user-roles-sync&quot;]]
+        T_Lic[[&quot;Topic: license-events&quot;]]
+    end
+
+    subgraph Consumers[&quot;3. Konsumenci i lokalne repliki odczytu&quot;]
+        subgraph UserSvc[&quot;integra-user-service&quot;]
+            U_Cons[&quot;Kafka Consumer&lt;br/&gt;(IdentityHandler)&quot;]
+            U_DB[(&quot;users.profiles&lt;br/&gt;users.accounts_authz&quot;)]
+            U_VK[&quot;Valkey Barrier State&lt;br/&gt;(Odświeżenie wersji konta)&quot;]
+        end
+
+        subgraph LedgerSvc[&quot;integra-ledger-service&quot;]
+            L_Cons[&quot;Kafka Router&quot;]
+            L_DB[(&quot;ledger.users_read&lt;br/&gt;ledger.orgs_read&lt;br/&gt;(Upsert z kontrolą wersji)&quot;)]
+        end
+    end
+
+    Reg --&gt;|&quot;Transakcja ACID + OutboxHeaders(ctx)&quot;| IAM_DB
+    IAM_DB --&gt;|&quot;Polling batch=100&quot;| IAM_Relay
+    IAM_Relay --&gt; T_User
+    IAM_Relay --&gt; T_Role
+    IAM_Relay --&gt; T_Lic
+
+    T_User --&gt;|&quot;telemetry.Restore(headers)&quot;| U_Cons
+    T_Role --&gt; U_Cons
+    U_Cons --&gt; U_DB
+    U_Cons --&gt; U_VK
+
+    T_User --&gt;|&quot;replicas.Upsert (version &gt; current)&quot;| L_Cons
+    T_Role --&gt; L_Cons
+    T_Lic --&gt; L_Cons
+    L_Cons --&gt; L_DB
+</pre>
+        </div>
+      </div>
+      <div class="card-footer">
+        <span class="hint">Wskazówka: Kółko myszy = zoom | Przeciąganie myszą = przesuwanie | Klawisz Esc = wyjście z pełnego ekranu</span>
+      </div>
+    </section>
+    
+    <section class="diagram-card" id="diag-9">
+      <div class="card-header">
+        <div class="card-title-group">
+          <span class="badge">Schemat 9</span>
+          <h2 class="card-title">4.4. Przepływ 4: Potok jakości CI/CD, audyt bezpieczeństwa i bramka regresji benchmarków</h2>
+        </div>
+        <div class="card-actions">
+          <button class="btn btn-secondary" onclick="zoomIn('diag-9')" title="Przybliż">+</button>
+          <button class="btn btn-secondary" onclick="zoomOut('diag-9')" title="Oddal">−</button>
+          <button class="btn btn-secondary" onclick="resetZoom('diag-9')" title="Resetuj widok">↺ 100%</button>
+          <button class="btn btn-primary" onclick="toggleFullscreen('diag-9')" title="Otwórz na pełnym ekranie">
+            <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <path d="M8 3H5a2 2 0 0 0-2 2v3m18 0V5a2 2 0 0 0-2-2h-3m0 18h3a2 2 0 0 0 2-2v-3M3 16v3a2 2 0 0 0 2 2h3"/>
+            </svg>
+            Pełny ekran
+          </button>
+          <button class="btn btn-outline" onclick="exportSvg('diag-9', 'schemat-9.svg')" title="Pobierz wektorowy SVG">Eksportuj SVG</button>
+        </div>
+      </div>
+      <div class="viewport-container" id="viewport-diag-9">
+        <div class="panzoom-layer" id="layer-diag-9">
+          <pre class="mermaid" id="mermaid-diag-9">flowchart TD
+    Push[&quot;Push / Pull Request do Monorepo&quot;] --&gt; Setup[&quot;Inicjalizacja środowiska Go 1.26 (GOWORK=off, CGO_ENABLED=1)&lt;br/&gt;Start kontenerów: 3x Postgres 18, MongoDB 8, Valkey 9&quot;]
+    Setup --&gt; Audit[&quot;scripts/Audit-Project.py&lt;br/&gt;Weryfikacja każdego modułu w izolacji (go vet, staticcheck v0.7.0)&quot;]
+    Audit --&gt; Vuln[&quot;govulncheck ./...&lt;br/&gt;Skanowanie podatności CVE w drzewie zależności&quot;]
+    Vuln --&gt; Codegen[&quot;Weryfikacja generatorów kodu:&lt;br/&gt;check-sqlc.py (spójność SQL) &amp; check-proto.py (spójność Buf Protobuf)&quot;]
+    Codegen --&gt; UnitTests[&quot;Testy jednostkowe i architektoniczne AST:&lt;br/&gt;go test -race -shuffle=on -mod=readonly ./...&quot;]
+    UnitTests --&gt; Migrate[&quot;Migracja izolowanych baz testowych:&lt;br/&gt;init-prod-pg.sql + cmd/migrate (IAM, User, Ledger)&quot;]
+    Migrate --&gt; IntTests[&quot;Testy integracyjne z detektorem wyścigów:&lt;br/&gt;-tags=integration -race (Postgres, Mongo, Valkey, Kafka)&quot;]
+    IntTests --&gt; BenchGate{&quot;Bramka Wydajnościowa:&lt;br/&gt;Collect-Benchmarks.py&lt;br/&gt;(--max-regression-pct 20.0)&quot;}
+    BenchGate -- &quot;Brak regresji &gt; 20%&quot; --&gt; DashGen[&quot;Generowanie wykresów SVG, Mermaid&lt;br/&gt;i BENCHMARKS-DASHBOARD.html&quot;]
+    BenchGate -- &quot;Wykryto regresję &gt; 20%&quot; --&gt; Fail[&quot;Blokada Pipeline&#x27;u (CI Failed)&quot;]
+    DashGen --&gt; InfraVal[&quot;Walidacja Infrastruktury:&lt;br/&gt;integra-infra/scripts/validate.sh (YAML, Helm, K8s, Terraform)&quot;]
+</pre>
+        </div>
+      </div>
+      <div class="card-footer">
+        <span class="hint">Wskazówka: Kółko myszy = zoom | Przeciąganie myszą = przesuwanie | Klawisz Esc = wyjście z pełnego ekranu</span>
+      </div>
+    </section>
+    
+  </main>
+
+  <script>
+    mermaid.initialize({
+      startOnLoad: true,
+      theme: 'dark',
+      securityLevel: 'loose',
+      fontFamily: 'Inter',
+      themeVariables: {
+        darkMode: true,
+        background: '#0b1120',
+        primaryColor: '#3b82f6',
+        primaryTextColor: '#f8fafc',
+        primaryBorderColor: '#60a5fa',
+        lineColor: '#94a3b8',
+        secondaryColor: '#1e293b',
+        tertiaryColor: '#0f172a'
+      }
+    });
+
+    // State per diagram
+    const state = {};
+
+    function initDiagram(id) {
+      if (!state[id]) {
+        state[id] = {
+          scale: 1,
+          x: 0,
+          y: 0,
+          isDragging: false,
+          startX: 0,
+          startY: 0
+        };
+      }
+    }
+
+    function applyTransform(id) {
+      const layer = document.getElementById('layer-' + id);
+      const s = state[id];
+      if (layer) {
+        layer.style.transform = `translate(${s.x}px, ${s.y}px) scale(${s.scale})`;
+      }
+    }
+
+    function zoomIn(id) {
+      initDiagram(id);
+      state[id].scale = Math.min(state[id].scale * 1.25, 6);
+      applyTransform(id);
+    }
+
+    function zoomOut(id) {
+      initDiagram(id);
+      state[id].scale = Math.max(state[id].scale / 1.25, 0.2);
+      applyTransform(id);
+    }
+
+    function resetZoom(id) {
+      initDiagram(id);
+      state[id].scale = 1;
+      state[id].x = 0;
+      state[id].y = 0;
+      applyTransform(id);
+    }
+
+    function toggleFullscreen(id) {
+      const card = document.getElementById(id);
+      if (!document.fullscreenElement) {
+        if (card.requestFullscreen) {
+          card.requestFullscreen();
+        }
+      } else {
+        if (document.exitFullscreen) {
+          document.exitFullscreen();
+        }
+      }
+    }
+
+    function exportSvg(id, filename) {
+      const svg = document.querySelector('#mermaid-' + id + ' svg');
+      if (!svg) {
+        alert('Diagram nie został jeszcze wyrenderowany.');
+        return;
+      }
+      const svgData = new XMLSerializer().serializeToString(svg);
+      const blob = new Blob([svgData], { type: 'image/svg+xml;charset=utf-8' });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = filename;
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      URL.revokeObjectURL(url);
+    }
+
+    function filterDiagram(id) {
+      document.querySelectorAll('.diagram-card').forEach(c => {
+        if (c.id === id) {
+          c.style.display = 'flex';
+          c.scrollIntoView({ behavior: 'smooth' });
+        } else {
+          c.style.display = 'none';
+        }
+      });
+      document.querySelectorAll('.nav-pill').forEach(p => p.classList.remove('active'));
+      const activePill = document.querySelector(`a[href="#${id}"]`);
+      if (activePill) activePill.classList.add('active');
+    }
+
+    function showAll() {
+      document.querySelectorAll('.diagram-card').forEach(c => c.style.display = 'flex');
+      document.querySelectorAll('.nav-pill').forEach(p => p.classList.remove('active'));
+      document.querySelector('.nav-bar a').classList.add('active');
+    }
+
+    // Setup pan & zoom listeners on each card
+    window.addEventListener('DOMContentLoaded', () => {
+      document.querySelectorAll('.diagram-card').forEach(card => {
+        const id = card.id;
+        initDiagram(id);
+        const vp = document.getElementById('viewport-' + id);
+
+        vp.addEventListener('mousedown', (e) => {
+          state[id].isDragging = true;
+          state[id].startX = e.clientX - state[id].x;
+          state[id].startY = e.clientY - state[id].y;
+        });
+
+        window.addEventListener('mousemove', (e) => {
+          if (state[id] && state[id].isDragging) {
+            state[id].x = e.clientX - state[id].startX;
+            state[id].y = e.clientY - state[id].startY;
+            applyTransform(id);
+          }
+        });
+
+        window.addEventListener('mouseup', () => {
+          if (state[id]) state[id].isDragging = false;
+        });
+
+        vp.addEventListener('wheel', (e) => {
+          e.preventDefault();
+          const delta = e.deltaY > 0 ? 0.9 : 1.1;
+          state[id].scale = Math.max(0.15, Math.min(state[id].scale * delta, 6));
+          applyTransform(id);
+        }, { passive: false });
+      });
+    });
+  </script>
+</body>
+</html>

@@ -1,5 +1,11 @@
 # Integra Core (Open-Core SDK)
 
+[![Go Reference](https://pkg.go.dev/badge/github.com/mateusz-kacpura/integra-core.svg)](https://pkg.go.dev/github.com/mateusz-kacpura/integra-core)
+[![Documentation Portal](https://img.shields.io/badge/docs-portal-3b82f6?style=flat-square&logo=gitbook&logoColor=white)](https://mateusz-kacpura.github.io/integra-core/)
+[![License](https://img.shields.io/badge/License-Apache_2.0-blue.svg)](https://opensource.org/licenses/Apache-2.0)
+
+🌐 **[Live Documentation Portal](https://mateusz-kacpura.github.io/integra-core/)** – Interaktywny portal dokumentacji architektonicznej, wersja dwujęzyczna (PL/EN), pełnoekranowe schematy Mermaid i wyszukiwarka na żywo.
+
 `integra-core` is the foundational open-source SDK and contract library for the **Integra Platform**.
 
 It provides core interface contracts, ConnectRPC/Protobuf protocols, structured logging with PII sanitization, W3C trace/correlation context propagation, cursor pagination, and essential runtime utilities.
