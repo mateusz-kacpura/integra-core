@@ -4,7 +4,7 @@ package accounting.v1;
 
 import "google/protobuf/timestamp.proto";
 
-option go_package = "github.com/mateusz-kacpura/integra/integra-proto/gen/go/accounting/v1;accountingv1";
+option go_package = "github.com/mateusz-kacpura/integra-enterprise/integra-proto/gen/go/accounting/v1;accountingv1";
 
 // LedgerService manages the double-entry general ledger and financial transactions.
 service LedgerService {

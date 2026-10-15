@@ -16,8 +16,8 @@ Protobuf definitions and generated Go code used by the current ledger-service co
 
 ```go
 import (
-    accountingv1 "github.com/mateusz-kacpura/integra/integra-proto/gen/go/accounting/v1"
-    "github.com/mateusz-kacpura/integra/integra-proto/gen/go/accounting/v1/accountingv1connect"
+    accountingv1 "github.com/mateusz-kacpura/integra-enterprise/integra-proto/gen/go/accounting/v1"
+    "github.com/mateusz-kacpura/integra-enterprise/integra-proto/gen/go/accounting/v1/accountingv1connect"
 )
 ```
 

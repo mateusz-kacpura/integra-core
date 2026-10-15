@@ -1,0 +1,137 @@
+site_name: Integra Platform
+site_description: Full Architectural, Technical, and Business Documentation for Integra Enterprise & Open-Core
+site_author: Mateusz Kacpura
+site_url: https://mateusz-kacpura.github.io/integra-core/
+repo_name: mateusz-kacpura/integra-core
+repo_url: https://github.com/mateusz-kacpura/integra-core
+
+docs_dir: docs
+site_dir: site
+
+theme:
+  name: material
+  language: pl
+  palette:
+    - scheme: slate
+      primary: indigo
+      accent: cyan
+      toggle:
+        icon: material/weather-night
+        name: Przełącz na tryb jasny
+    - scheme: default
+      primary: indigo
+      accent: cyan
+      toggle:
+        icon: material/weather-sunny
+        name: Przełącz na tryb ciemny
+  features:
+    - navigation.tabs
+    - navigation.sections
+    - navigation.expand
+    - navigation.top
+    - search.suggest
+    - search.highlight
+    - content.code.copy
+    - content.code.annotate
+
+plugins:
+  - search
+  - i18n:
+      docs_structure: suffix
+      fallback_to_default: true
+      reconfigure_material: true
+      languages:
+        - locale: en
+          name: English
+          default: true
+          build: true
+        - locale: pl
+          name: Polski
+          default: false
+          build: true
+          nav_translations:
+            Home: Strona główna
+            Purpose & Business Value: Cel i wartość biznesowa
+            Benchmark Analysis & Performance: Analiza benchmarków i wydajność
+            Global Architecture: Globalna architektura
+            Key System Workflows: Kluczowe przepływy pracy
+            Directory & File Structure: Struktura katalogów i modułów
+            Overview: Przegląd
+            1.1 Project Purpose & Vision: 1.1 Cel projektu i wizja architektoniczna
+            1.2 Business Value: 1.2 Wartość biznesowa
+            1.3 Market Uniqueness: 1.3 Unikalność na rynku Go
+            2.1 Platform Statistics: 2.1 Statystyki opisowe platformy
+            2.2 Module Performance: 2.2 Statystyki wydajności modułów
+            2.3 Architectural Evidence: 2.3 Dowody benchmarkowe
+            2.4 Visualizations: 2.4 Wizualizacje Mermaid
+            3.1 Ecosystem & Infrastructure: 3.1 Ekosystem i infrastruktura
+            3.2 Go Workspace & Open-Core: 3.2 Zależności go.work i Open-Core
+            3.3 Clean Architecture & CQRS: 3.3 Architektura czysta i CQRS
+            4.1 JWT & Security Verification: 4.1 Weryfikacja tokena JWT
+            4.2 Double-Entry Ledger Posting: 4.2 Księgowanie podwójnego zapisu
+            4.3 User Registration Saga: 4.3 Saga rejestracji użytkownika
+            4.4 CI/CD Quality Pipeline: 4.4 Potok jakości CI/CD
+            5.1 Root Monorepo & Tooling: 5.1 Katalog główny i narzędzia
+            5.2 Open-Core Distribution: 5.2 Dystrybucja Open-Core
+            5.3 Proto & Postgres Adapters: 5.3 Moduły Proto i Postgres
+            5.4 Shared Go Library: 5.4 Biblioteka Shared Go
+            5.5 IAM Service: 5.5 Mikroserwis IAM
+            5.6 User Service: 5.6 Mikroserwis User
+            5.7 Ledger Service: 5.7 Mikroserwis Ledger
+            5.8 Cloud Infrastructure: 5.8 Infrastruktura chmurowa
+            Full Specification: Pełna specyfikacja dokumentacji
+
+markdown_extensions:
+  - admonition
+  - pymdownx.details
+  - pymdownx.superfences:
+      custom_fences:
+        - name: mermaid
+          class: mermaid
+          format: !!python/name:pymdownx.superfences.fence_code_format
+  - pymdownx.highlight:
+      anchor_linenums: true
+      line_spans: __span
+      pygments_lang_class: true
+  - pymdownx.inlinehilite
+  - pymdownx.snippets
+  - pymdownx.tabbed:
+      alternate_style: true
+  - tables
+  - attr_list
+
+nav:
+  - Home: index.md
+  - Purpose & Business Value:
+      - Overview: 01-purpose-and-business-value/index.md
+      - 1.1 Project Purpose & Vision: 01-purpose-and-business-value/1.1-project-purpose-and-vision.md
+      - 1.2 Business Value: 01-purpose-and-business-value/1.2-business-value.md
+      - 1.3 Market Uniqueness: 01-purpose-and-business-value/1.3-market-uniqueness.md
+  - Benchmark Analysis & Performance:
+      - Overview: 02-benchmark-analysis-and-performance/index.md
+      - 2.1 Platform Statistics: 02-benchmark-analysis-and-performance/2.1-platform-statistics.md
+      - 2.2 Module Performance: 02-benchmark-analysis-and-performance/2.2-module-performance.md
+      - 2.3 Architectural Evidence: 02-benchmark-analysis-and-performance/2.3-architectural-evidence.md
+      - 2.4 Visualizations: 02-benchmark-analysis-and-performance/2.4-benchmark-visualizations.md
+  - Global Architecture:
+      - Overview: 03-global-architecture/index.md
+      - 3.1 Ecosystem & Infrastructure: 03-global-architecture/3.1-ecosystem-and-infrastructure.md
+      - 3.2 Go Workspace & Open-Core: 03-global-architecture/3.2-go-workspace-and-open-core.md
+      - 3.3 Clean Architecture & CQRS: 03-global-architecture/3.3-clean-architecture-and-cqrs.md
+  - Key System Workflows:
+      - Overview: 04-key-system-workflows/index.md
+      - 4.1 JWT & Security Verification: 04-key-system-workflows/4.1-jwt-and-security-verification.md
+      - 4.2 Double-Entry Ledger Posting: 04-key-system-workflows/4.2-double-entry-ledger-posting.md
+      - 4.3 User Registration Saga: 04-key-system-workflows/4.3-user-registration-saga.md
+      - 4.4 CI/CD Quality Pipeline: 04-key-system-workflows/4.4-cicd-quality-pipeline.md
+  - Directory & File Structure:
+      - Overview: 05-directory-and-file-structure/index.md
+      - 5.1 Root Monorepo & Tooling: 05-directory-and-file-structure/5.1-root-monorepo-and-tooling.md
+      - 5.2 Open-Core Distribution: 05-directory-and-file-structure/5.2-open-core-distribution.md
+      - 5.3 Proto & Postgres Adapters: 05-directory-and-file-structure/5.3-proto-and-postgres-adapters.md
+      - 5.4 Shared Go Library: 05-directory-and-file-structure/5.4-shared-go-library.md
+      - 5.5 IAM Service: 05-directory-and-file-structure/5.5-iam-service.md
+      - 5.6 User Service: 05-directory-and-file-structure/5.6-user-service.md
+      - 5.7 Ledger Service: 05-directory-and-file-structure/5.7-ledger-service.md
+      - 5.8 Cloud Infrastructure: 05-directory-and-file-structure/5.8-cloud-infrastructure.md
+  - Full Specification: doc.md

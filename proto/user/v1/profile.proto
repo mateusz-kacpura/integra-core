@@ -1,6 +1,6 @@
 syntax = "proto3";
 package user.v1;
-option go_package = "github.com/mateusz-kacpura/integra/integra-proto/gen/go/user/v1;userv1";
+option go_package = "github.com/mateusz-kacpura/integra-enterprise/integra-proto/gen/go/user/v1;userv1";
 service ProfileService {
  rpc GetProfile(GetProfileRequest) returns(GetProfileResponse);
 }
