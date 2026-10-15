@@ -25,94 +25,94 @@ go get github.com/mateusz-kacpura/integra-core@v0.1.0
 
 ---
 
-## 🏛️ Architektura Infrastruktury i Mapa Opóźnień Węzłów (Node Latency Map)
+## 🏛️ Infrastructure Architecture & Node Latency Map
 
-Poniższy diagram infrastruktury przedstawia przepływ żądań przez warstwy systemu z naniesionymi **rzeczywistymi opóźnieniami** zmierzonymi na poszczególnych węzłach na podstawie załączonego poniżej surowego zrzutu benchmarków platformy:
+The infrastructure diagram below illustrates the request flow across system tiers annotated with **actual latencies** measured at each node, derived from the platform raw benchmark dump:
 
 ```mermaid
 flowchart TB
-    subgraph Edge["1. Warstwa Brzegowa (Edge & Ingress)"]
-        WAF["BunkerWeb WAF + ModSecurity<br/><i>Reguły OWASP, Rate Limit 100 r/s, TLS/HTTP2</i>"]
+    subgraph Edge["1. Edge & Ingress Layer"]
+        WAF["BunkerWeb WAF + ModSecurity<br/><i>OWASP CRS, Rate Limit 100 r/s, TLS/HTTP2</i>"]
         Gateway["Envoy API Gateway (:8080)<br/><i>mTLS Service Mesh Routing</i>"]
         WAF -->|mTLS| Gateway
     end
 
-    subgraph L1_Tier["2. Warstwa L1 In-Process Hardware Cache (CPU Core & Lock-Free, 0 allocs)"]
+    subgraph L1_Tier["2. L1 In-Process Hardware Cache Tier (CPU Core & Lock-Free, 0 allocs)"]
         RBAC_L1["RBAC Matrix (pkg/rbac)<br/><b>Match: 4.2 ns</b> | <b>Check: 11.8 ns</b><br/><i>0 allocs, Lock-Free Bitmask</i>"]
         IAM_L1["IAM Auth Cache (pkg/auth)<br/><b>L1 Cache Get: 35.4 ns</b><br/><b>Verified JWT Cache: 525.2 ns</b><br/><i>0 allocs, atomic.Pointer</i>"]
         USER_L1["User Profile Cache (internal/app)<br/><b>Profile Read: 44.9 ns</b><br/><b>Cache-Line Padding: 3.8 ns</b><br/><i>0 allocs, 64-byte padding</i>"]
         LDG_L1["Ledger Fast-Path (internal/domain)<br/><b>Journal Validation: 8.0 ns</b><br/><b>Snapshot Tail (tail_0): 24.0 ns</b><br/><b>Prepare Posting: 85.6 ns</b><br/><i>0 allocs, In-Memory Ring Buffer</i>"]
     end
 
-    subgraph L2_Tier["3. Warstwa Logiki Domenowej, Kryptografii i Serializacji (Sub-Mikrosekundy)"]
+    subgraph L2_Tier["3. Domain Logic, Cryptography & Serialization Tier (Sub-Microsecond)"]
         Crypto["AEAD Cryptography (pkg/crypto)<br/><b>Encrypt 1KB: 931.8 ns</b><br/><b>Decrypt 1KB: 850.2 ns</b><br/><b>KeyGen: 154.5 ns</b>"]
         Pagination["Cursor Pagination (pkg/pagination)<br/><b>Encode: 97.5 ns</b> | <b>Decode: 129.3 ns</b><br/><i>Zero-Alloc URL-Safe Base64</i>"]
-        DomainOps["Domenowe Operacje Encji<br/><b>User Creation: 0.3 ns</b><br/><b>Invoice Calc: 118.0 ns</b><br/><b>Hash SHA-256: 175.5 ns</b>"]
-        Serialization["Serializacja JSON / Bufor Zdarzeń<br/><b>REST Marshal: 1.08 µs</b><br/><b>gRPC Parse Decimal: 33.1 ns</b><br/><b>Pooled Event Buffer: 463.2 ns</b>"]
+        DomainOps["Domain Entity Operations<br/><b>User Creation: 0.3 ns</b><br/><b>Invoice Calc: 118.0 ns</b><br/><b>Hash SHA-256: 175.5 ns</b>"]
+        Serialization["JSON Serialization / Event Buffer<br/><b>REST Marshal: 1.08 µs</b><br/><b>gRPC Parse Decimal: 33.1 ns</b><br/><b>Pooled Event Buffer: 463.2 ns</b>"]
     end
 
-    subgraph Data_Tier["4. Warstwa Danych i Adapterów Bazodanowych (Adapters, Cache & Storage)"]
-        subgraph Adapters["Adaptery Postgres & Routing Partycji (In-Memory)"]
+    subgraph Data_Tier["4. Data Tier & Database Adapters (Adapters, Cache & Storage)"]
+        subgraph Adapters["Postgres Adapters & Partition Routing (In-Memory)"]
             SQLRoute["SQL Partition Routing (sqlrouting)<br/><b>Cache Hit: 20.4 ns (0 allocs)</b><br/><b>Cache Miss: 227.6 ns</b>"]
-            PgTypes["Bezalokacyjne Konwersje pgtype<br/><b>UUIDxToPgtype: 0.5 ns</b><br/><b>TimestamptzToTimePtr: 0.5 ns</b><br/><b>StringPtrToPgtext: 0.5 ns</b>"]
+            PgTypes["Zero-Alloc pgtype Conversions<br/><b>UUIDxToPgtype: 0.5 ns</b><br/><b>TimestamptzToTimePtr: 0.5 ns</b><br/><b>StringPtrToPgtext: 0.5 ns</b>"]
         end
-        subgraph Distributed["Pamięć Rozproszona L2 & Baza Danych L3"]
-            Valkey[("L2 Distributed Valkey Cluster<br/><i>Dzierżawy tokenów i sesje</i><br/><b>Opóźnienie: 141 – 422 µs</b>")]
-            Postgres[("L3 PostgreSQL 18 Cluster<br/><i>Księga główna, IAM, Users</i><br/><b>Prep UoW: 2.35 – 3.53 µs</b><br/><b>Transakcja SQL: 1.8 – 4.5 ms</b>")]
+        subgraph Distributed["L2 Distributed Cache & L3 Database Cluster"]
+            Valkey[("L2 Distributed Valkey Cluster<br/><i>Token leases & session store</i><br/><b>Latency: 141 – 422 µs</b>")]
+            Postgres[("L3 PostgreSQL 18 Cluster<br/><i>General ledger, IAM, Users</i><br/><b>Prep UoW: 2.35 – 3.53 µs</b><br/><b>SQL Transaction: 1.8 – 4.5 ms</b>")]
         end
     end
 
-    Gateway -->|Weryfikacja Tokena & Uprawnień| IAM_L1
-    Gateway -->|Sprawdzenie Uprawnień| RBAC_L1
-    Gateway -->|Odczyt Profilu| USER_L1
-    Gateway -->|Operacje Księgowe| LDG_L1
+    Gateway -->|Verify Token & Permissions| IAM_L1
+    Gateway -->|Check Permissions| RBAC_L1
+    Gateway -->|Read Profile| USER_L1
+    Gateway -->|Ledger Operations| LDG_L1
 
-    IAM_L1 -.->|Kryptografia Asymetryczna| Crypto
-    USER_L1 -.->|Paginacja & Formatowanie| Pagination
-    LDG_L1 -.->|Kalkulacja & Haszowanie| DomainOps
+    IAM_L1 -.->|Asymmetric Crypto| Crypto
+    USER_L1 -.->|Pagination & DTO| Pagination
+    LDG_L1 -.->|Calculation & Hashing| DomainOps
     DomainOps -.-> Serialization
 
     IAM_L1 -- "L1 Cache Miss (>500ms)" --> Valkey
-    Valkey -- "Brak Dzierżawy / Unieważnienie" --> SQLRoute
+    Valkey -- "Lease Expired / Invalidation" --> SQLRoute
     USER_L1 --> SQLRoute
     LDG_L1 --> SQLRoute
     SQLRoute --> PgTypes
     PgTypes --> Postgres
 ```
 
-### ⚡ Zestawienie Opóźnień wg Warstw Architektonicznych
+### ⚡ Latency Breakdown by Architectural Tier
 
-| Warstwa | Komponent / Benchmark | Zmierzony Czas (ns/op) | Alokacje | Znaczenie Inżynieryjne |
+| Architectural Tier | Component / Benchmark | Measured Latency (ns/op) | Allocations | Engineering Significance |
 |:---|:---|---:|:---:|:---|
-| **L1 CPU Hardware** | `BenchmarkFalseSharing_CacheLinePadded` | **3.8 ns** | 0 allocs | Wyrównanie pamięci do 64B linii cache procesora |
-| **L1 In-Process** | `BenchmarkMatchParallel` | **4.2 ns** | 0 allocs | Równoległa ewaluacja bitmaski uprawnień RBAC |
-| **L1 In-Process** | `BenchmarkJournalValidation` | **8.0 ns** | 0 allocs | Spójność sald księgi głównej w pamięci podręcznej |
-| **L1 In-Process** | `BenchmarkCheckParallel` | **11.8 ns** | 0 allocs | Wielowątkowe sprawdzenie reguł dostępu |
-| **L1 In-Process** | `BenchmarkTableBind_Hit` | **20.4 ns** | 0 allocs | Bezpośrednie trasowanie partycji bazy danych |
-| **L1 In-Process** | `BenchmarkAccountSnapshotTail/tail_0` | **24.0 ns** | 0 allocs | Odtworzenie stanu konta z bufora pierścieniowego |
-| **L1 In-Process** | `BenchmarkL1CacheGetParallel` | **35.4 ns** | 0 allocs | Równoległy odczyt stanu konta z pamięci lokalnej |
-| **L1 In-Process** | `BenchmarkProfileRead` | **44.9 ns** | 0 allocs | Odczyt profilu użytkownika bez narzutu I/O |
-| **L1 In-Process** | `BenchmarkVerifyJWT_InProcessCache` | **525.2 ns** | 0 allocs | Lokalna weryfikacja ważności tokena JWT |
-| **L1 In-Process** | `BenchmarkLocalVerifierWithL1Cache` | **639.5 ns** | 0 allocs | Pełny lokalny weryfikator asymetryczny z dzierżawą |
-| **L2 Domain & Crypto** | `BenchmarkUserCreation` | **0.3 ns** | 0 allocs | Błyskawiczne tworzenie agregatu domenowego |
-| **L2 Domain & Crypto** | `BenchmarkUUIDxToPgtype` / `Timestamptz` | **0.5 ns** | 0 allocs | Bezalokacyjne handlery typów bazodanowych |
-| **L2 Domain & Crypto** | `BenchmarkCursorEncode` / `Decode` | **97.5 – 129.3 ns** | 1 alloc | URL-Safe Base64 tokeny paginacji |
-| **L2 Domain & Crypto** | `BenchmarkPostingRequestHash` | **175.5 ns** | 0 allocs | Bufor SHA-256 idempotencji na ramce stosu |
-| **L2 Domain & Crypto** | `BenchmarkEventSerializationBuffer/pooled` | **463.2 ns** | 3 allocs | Buforowane enkodery zdarzeń domenowych |
-| **L2 Domain & Crypto** | `BenchmarkDecrypt/1KB` / `Encrypt/1KB` | **850.2 – 931.8 ns** | 2 allocs | Szyfrowanie i deszyfrowanie sprzętowe XChaCha20 |
-| **L2 Domain & Crypto** | `BenchmarkUserJSONUnmarshal` / `Marshal` | **971.0 – 1078.0 ns** | 5–10 allocs | Serializacja i deserializacja transportowa HTTP DTO |
-| **L2 Distributed** | `Valkey Cluster` | **141 – 422 µs** | I/O | Dzierżawy tokenów i sesje w pamięci RAM |
-| **L3 Database** | `BenchmarkRegisterUser_UnitOfWork` | **2,351 – 3,525 ns** | 26–38 allocs | Czas przygotowania transakcji SQL (prep) |
-| **L3 Database** | `PostgreSQL 18 Cluster` | **1.8 – 4.5 ms** | I/O Disk | Trwały zapis transakcyjny ACID w bazie danych |
+| **L1 CPU Hardware** | `BenchmarkFalseSharing_CacheLinePadded` | **3.8 ns** | 0 allocs | Structure alignment to CPU 64-byte cache line (eliminates false sharing) |
+| **L1 In-Process** | `BenchmarkMatchParallel` | **4.2 ns** | 0 allocs | Lock-free parallel bitmask RBAC evaluation |
+| **L1 In-Process** | `BenchmarkJournalValidation` | **8.0 ns** | 0 allocs | In-memory double-entry balance consistency check |
+| **L1 In-Process** | `BenchmarkCheckParallel` | **11.8 ns** | 0 allocs | Atomic parallel permission check across tenants |
+| **L1 In-Process** | `BenchmarkTableBind_Hit` | **20.4 ns** | 0 allocs | Fast-path in-memory SQL partition routing hit |
+| **L1 In-Process** | `BenchmarkAccountSnapshotTail/tail_0` | **24.0 ns** | 0 allocs | Zero-alloc account aggregate snapshot read from ring buffer |
+| **L1 In-Process** | `BenchmarkL1CacheGetParallel` | **35.4 ns** | 0 allocs | Multi-threaded local L1 in-process cache lookup |
+| **L1 In-Process** | `BenchmarkProfileRead` | **44.9 ns** | 0 allocs | L1 cached user profile retrieval without database I/O |
+| **L1 In-Process** | `BenchmarkVerifyJWT_InProcessCache` | **525.2 ns** | 0 allocs | Process-local Ed25519 JWT signature verification cache |
+| **L1 In-Process** | `BenchmarkLocalVerifierWithL1Cache` | **639.5 ns** | 0 allocs | Full asymmetric verifier with 500ms Valkey lease synchronization |
+| **L2 Domain & Crypto** | `BenchmarkUserCreation` | **0.3 ns** | 0 allocs | Sub-nanosecond domain aggregate initialization |
+| **L2 Domain & Crypto** | `BenchmarkUUIDxToPgtype` / `Timestamptz` | **0.5 ns** | 0 allocs | Zero-allocation nil-safe PostgreSQL type conversion handlers |
+| **L2 Domain & Crypto** | `BenchmarkCursorEncode` / `Decode` | **97.5 – 129.3 ns** | 1 alloc | Stack-allocated zero-alloc cursor encode/decode |
+| **L2 Domain & Crypto** | `BenchmarkPostingRequestHash` | **175.5 ns** | 0 allocs | Stack-frame SHA-256 idempotency hash buffer |
+| **L2 Domain & Crypto** | `BenchmarkEventSerializationBuffer/pooled` | **463.2 ns** | 3 allocs | sync.Pool byte buffers for domain event marshaling |
+| **L2 Domain & Crypto** | `BenchmarkDecrypt/1KB` / `Encrypt/1KB` | **850.2 – 931.8 ns** | 2 allocs | Hardware-accelerated XChaCha20-Poly1305 AEAD cipher |
+| **L2 Domain & Crypto** | `BenchmarkUserJSONUnmarshal` / `Marshal` | **971.0 – 1078.0 ns** | 5–10 allocs | Transport-level JSON DTO encode/decode |
+| **L2 Distributed** | `Valkey Cluster` | **141 – 422 µs** | I/O | Distributed in-memory token lease & session verification |
+| **L3 Database** | `BenchmarkRegisterUser_UnitOfWork` | **2,351 – 3,525 ns** | 26–38 allocs | In-memory SQL unit-of-work preparation prior to network I/O |
+| **L3 Database** | `PostgreSQL 18 Cluster` | **1.8 – 4.5 ms** | I/O Disk | ACID transactional write to disk across PostgreSQL cluster |
 
 ---
 
-## Surowy Zrzut Benchmarków (Raw Benchmark Dump)
+## Raw Benchmark Output
 
-> **Polecenie:** `go test -pgo=off -run ^$ -bench . -benchmem -benchtime=50ms -count=3 ./...`  
-> **Platforma:** `windows/amd64`  
-> **Procesor:** `AMD Ryzen 5 3600X 6-Core Processor`  
-> **Wersja Go:** `go version go1.24+ windows/amd64`  
+> **Command:** `go test -pgo=off -run ^$ -bench . -benchmem -benchtime=50ms -count=3 ./...`  
+> **Platform:** `windows/amd64`  
+> **CPU:** `AMD Ryzen 5 3600X 6-Core Processor`  
+> **Go Version:** `go version go1.26 windows/amd64`  
 > **Commit:** `bc507e3`  
 > **Timestamp:** `2026-10-15T10:15:20Z`
 
@@ -546,7 +546,7 @@ Candidate validation: examples
 
 ---
 
-## Surowy Zrzut Metryk CSV (`PLATFORM-BENCHMARKS-LATEST.csv`)
+## Raw Benchmark Metrics CSV (`PLATFORM-BENCHMARKS-LATEST.csv`)
 
 ```csv
 source,module,package,benchmark,samples,ns/op,B/op,allocs/op,queries/op
