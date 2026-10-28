@@ -47,16 +47,17 @@ graph TB
         end
 
         subgraph LEDGER["integra-ledger-service"]
-            LDG_Srv["Ledger Server<br/>(HTTP :8085 / gRPC :9085)"]
-            LDG_Wrk["Ledger Outbox & Snapshot Worker"]
+            LDG_Srv["Ledger Server<br/>(HTTP :8085 / gRPC :9085)<br/>+ TigerBeetle Go Client"]
+            LDG_Wrk["Ledger Outbox & Pipelined Worker<br/>(DeliveryWindow = 16)"]
             LDG_Cat["Project-Catchup CLI"]
         end
     end
 
-    subgraph DataLayer["Warstwa danych i komunikacji (AWS RDS, DocumentDB, ElastiCache, MSK)"]
+    subgraph DataLayer["Warstwa danych i komunikacji (TigerBeetle, AWS RDS, DocumentDB, ElastiCache, MSK)"]
+        TB[("TigerBeetle Financial Ledger<br/>(Cluster ID 0, Direct I/O :3000)<br/>• debits/credits_posted<br/>• Viewstamped Replication")]
         PG_IAM[("PostgreSQL 18<br/>Schema: iam")]
         PG_USR[("PostgreSQL 18<br/>Schema: users")]
-        PG_LDG[("PostgreSQL 18<br/>Schema: ledger")]
+        PG_LDG[("PostgreSQL 18 (Metadane & Projekcje)<br/>Schema: ledger")]
         Mongo[("MongoDB 8 / DocumentDB<br/>(Sesje Auth & Password Reset)")]
         Valkey[("Valkey 9 / ElastiCache<br/>(L2 Security State, Leases, Claims Cache)")]
         Kafka{{"Apache Kafka / AWS MSK<br/>(38 Kanonicznych Tematów Zdarzeń)"}}
@@ -97,6 +98,7 @@ graph TB
     USR_Wrk <--> Kafka
     USR_Wrk --> PG_USR
 
+    LDG_Srv --> TB
     LDG_Srv --> PG_LDG
     LDG_Srv --> Valkey
     LDG_Wrk <--> Kafka
@@ -189,6 +191,7 @@ flowchart TB
     end
 
     subgraph InfraLayer["Warstwa infrastruktury (internal/infrastructure)"]
+        TB["TigerBeetle Adapter (tigerbeetle-go)<br/>AccountRepository & PostingRepository<br/>Uint128 ID Mapping, Direct I/O"]
         PG["PostgreSQL Repository (pgx/v5 + sqlc)<br/>Unit of Work / Single-CTE Atomic Commit"]
         MG["MongoDB Repository<br/>(Sesje Auth, Tokeny Refresh, Reset Haseł)"]
         VK["Valkey Adapter<br/>(L2 Claims Cache, SecurityState, Leases)"]
@@ -204,6 +207,7 @@ flowchart TB
     Cmds --> Events
     Cmds --> Ports
     Qrys --> Ports
+    TB -. "implementuje" .-> Ports
     PG -. "implementuje" .-> Ports
     MG -. "implementuje" .-> Ports
     VK -. "implementuje" .-> Ports

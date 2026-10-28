@@ -51,16 +51,17 @@ graph TB
         end
 
         subgraph LEDGER["integra-ledger-service"]
-            LDG_Srv["Ledger Server<br/>(HTTP :8085 / gRPC :9085)"]
-            LDG_Wrk["Ledger Outbox & Snapshot Worker"]
+            LDG_Srv["Ledger Server<br/>(HTTP :8085 / gRPC :9085)<br/>+ TigerBeetle Go Client"]
+            LDG_Wrk["Ledger Outbox & Pipelined Worker<br/>(DeliveryWindow = 16)"]
             LDG_Cat["Project-Catchup CLI"]
         end
     end
 
-    subgraph DataLayer["Data & Messaging Tier (AWS RDS, DocumentDB, ElastiCache, MSK)"]
+    subgraph DataLayer["Data & Messaging Tier (TigerBeetle, AWS RDS, DocumentDB, ElastiCache, MSK)"]
+        TB[("TigerBeetle Financial Ledger<br/>(Cluster ID 0, Direct I/O :3000)<br/>• debits/credits_posted<br/>• Viewstamped Replication")]
         PG_IAM[("PostgreSQL 18<br/>Schema: iam")]
         PG_USR[("PostgreSQL 18<br/>Schema: users")]
-        PG_LDG[("PostgreSQL 18<br/>Schema: ledger")]
+        PG_LDG[("PostgreSQL 18 (Metadata & Projections)<br/>Schema: ledger")]
         Mongo[("MongoDB 8 / DocumentDB<br/>(Auth Sessions & Password Reset)")]
         Valkey[("Valkey 9 / ElastiCache<br/>(L2 Security State, Leases, Claims Cache)")]
         Kafka{{"Apache Kafka / AWS MSK<br/>(38 Canonical Event Streams)"}}
@@ -100,6 +101,7 @@ graph TB
     USR_Wrk --> Kafka
     USR_Wrk --> PG_USR
 
+    LDG_Srv --> TB
     LDG_Srv --> PG_LDG
     LDG_Srv --> Valkey
     LDG_Wrk --> PG_LDG
@@ -199,14 +201,16 @@ flowchart TB
     end
 
     subgraph Infrastructure["Infrastructure Layer (internal/infrastructure)"]
-        PG["PostgreSQL Adapters<br/>(pgx/v5, Single CTE SQL)"]
+        TB["TigerBeetle Adapter<br/>(Account & Posting Ports, Direct I/O)"]
+        PG["PostgreSQL Adapters<br/>(pgx/v5, Metadata & Outbox)"]
         VK["Valkey L2 Leases<br/>(Lua Scripts, Lease Checks)"]
-        OB["Outbox Publisher<br/>(Transactional Outbox Table)"]
+        OB["Outbox Publisher<br/>(Pipelined Outbox Worker)"]
     end
 
     Transport --> Application
     Application --> Domain
     Infrastructure -. "implements" .-> Ports
+    TB -. "implements" .-> Ports
     VK -. "implements" .-> Ports
     OB --> PG
 ```

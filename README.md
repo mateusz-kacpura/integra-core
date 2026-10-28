@@ -56,9 +56,10 @@ flowchart TB
             SQLRoute["SQL Partition Routing (sqlrouting)<br/><b>Cache Hit: 20.4 ns (0 allocs)</b><br/><b>Cache Miss: 227.6 ns</b>"]
             PgTypes["Zero-Alloc pgtype Conversions<br/><b>UUIDxToPgtype: 0.5 ns</b><br/><b>TimestamptzToTimePtr: 0.5 ns</b><br/><b>StringPtrToPgtext: 0.5 ns</b>"]
         end
-        subgraph Distributed["L2 Distributed Cache & L3 Database Cluster"]
+        subgraph Distributed["L2 Distributed Cache & L3 Storage Engines"]
+            TB[("TigerBeetle Financial Ledger Cluster<br/><i>Direct I/O :3000, Viewstamped Replication</i><br/><b>Sub-millisecond Transfers</b>")]
             Valkey[("L2 Distributed Valkey Cluster<br/><i>Token leases & session store</i><br/><b>Latency: 141 – 422 µs</b>")]
-            Postgres[("L3 PostgreSQL 18 Cluster<br/><i>General ledger, IAM, Users</i><br/><b>Prep UoW: 2.35 – 3.53 µs</b><br/><b>SQL Transaction: 1.8 – 4.5 ms</b>")]
+            Postgres[("L3 PostgreSQL 18 Cluster<br/><i>IAM, Users, Metadata & Projections</i><br/><b>Prep UoW: 2.35 – 3.53 µs</b><br/><b>SQL Transaction: 1.8 – 4.5 ms</b>")]
         end
     end
 
@@ -72,6 +73,7 @@ flowchart TB
     LDG_L1 -.->|Calculation & Hashing| DomainOps
     DomainOps -.-> Serialization
 
+    LDG_L1 -->|Double-Entry Transfers| TB
     IAM_L1 -- "L1 Cache Miss (>500ms)" --> Valkey
     Valkey -- "Lease Expired / Invalidation" --> SQLRoute
     USER_L1 --> SQLRoute

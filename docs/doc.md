@@ -174,26 +174,34 @@ The project implements a hybrid distribution strategy: **Open-Core + Enterprise 
 ---
 
 1. **CPU False Sharing Elimination via Cache-Line Padding (`[64]byte`)**:
-   - `BenchmarkL1Cache_Parallel_NoPad`: **14.2 ns/op**
-   - `BenchmarkL1Cache_Parallel_Padded`: **3.9 ns/op** (**72.4% reduction in execution time**)
-   - Evidence that memory alignment prevents CPU cache line bouncing across multi-core systems.
+   - `BenchmarkFalseSharing_Unpadded`: **2.02 ns/op**
+   - `BenchmarkFalseSharing_CacheLinePadded`: **1.40 ns/op** (**44% reduction in execution time**)
+   - Evidence that memory alignment (`cpu.CacheLinePad`) prevents CPU cache line bouncing across concurrent multi-core threads.
 
 2. **Zero-Alloc Pagination Encoding & Decoding**:
-   - `BenchmarkCursor_Encode`: **102.0 ns/op (0 B/op, 0 allocs/op)**
-   - `BenchmarkCursor_Decode`: **118.4 ns/op (0 B/op, 0 allocs/op)**
-   - Custom bit-packing avoids string allocations on every paginated API request.
+   - `BenchmarkCursorEncode`: **32.5 ns/op (64 B/op, 1 alloc/op)**
+   - `BenchmarkCursorDecode`: **54.0 ns/op (48 B/op, 1 alloc/op)**
+   - High-throughput binary cursor encoding avoiding unnecessary heap allocations on paginated endpoints.
 
 3. **Sub-Microsecond JWT Token & Permission Evaluation**:
-   - `BenchmarkJWTVerifier_Verify_L1Cache`: **36.5 ns/op (0 B/op)**
-   - `BenchmarkRBAC_CheckPermission_Parallel`: **4.4 ns/op (0 B/op)**
-   - Authorizes requests in memory without querying external databases or caches on every hit.
+   - `BenchmarkL1CacheGet`: **54.4 ns/op (0 B/op, 0 allocs/op)**
+   - `BenchmarkL1CacheGetParallel`: **35.2 ns/op (0 B/op, 0 allocs/op)**
+   - `BenchmarkVerifyJWT_InProcessCache`: **496.9 ns/op (0 B/op, 0 allocs/op)**
+   - Non-blocking `Memo` singleflight cache prevents cache stampedes on L1 misses; in-memory bitmask checks evaluate permissions in **2.1 ns/op** (`BenchmarkMatchParallel`).
 
-4. **Single-Roundtrip CTE Double-Entry Ledger Posting**:
-   - `BenchmarkLedger_PostingPrep`: **90.6 ns/op (0 B/op)**
-   - Hashing, aggregate validation, and snapshot scheduling execute in-memory with zero GC overhead before hitting the PostgreSQL single CTE commit query.
+4. **TigerBeetle Authoritative Financial Ledger**:
+   - Replaced relational SQL row locking (`SELECT ... FOR UPDATE`, 4.07 ms bottleneck on hot accounts) and manual snapshot computation with native **TigerBeetle** binary direct I/O.
+   - Balances (`CreditsPosted - DebitsPosted`) are atomically updated in real-time in the storage engine with zero application calculation overhead.
 
-5. **Sanitizing Logger Performance**:
-   - High-throughput PII and secret masking running under 250 ns per log record, ensuring regulatory compliance without logging bottlenecks.
+5. **Zero-Allocation 64KB Cryptography (`sync.Pool`)**:
+   - `BenchmarkSeal_64KB`: **0 B/op, 0 allocs/op**
+   - `BenchmarkOpen_64KB`: **0 B/op, 0 allocs/op**
+   - Eliminated the previous 73,760 B/op allocation overhead during large payload encryption while sustaining over 2.1 GB/s XChaCha20-Poly1305 throughput per core.
+
+6. **Pipelined Kafka Batch Delivery (15.75x Speedup)**:
+   - `DeliveryWindow/Window_1`: **36.55 ms**
+   - `DeliveryWindow/Window_16`: **2.30 ms (15.75x speedup)**
+   - Worker pool with buffered task channel completely hides network RTT latency during outbox batch publication, while reusable `time.NewTimer` instances eliminate timer leaks.
 
 ---
 
@@ -314,16 +322,17 @@ graph TB
         end
 
         subgraph LEDGER["integra-ledger-service"]
-            LDG_Srv["Ledger Server<br/>(HTTP :8085 / gRPC :9085)"]
-            LDG_Wrk["Ledger Outbox & Snapshot Worker"]
+            LDG_Srv["Ledger Server<br/>(HTTP :8085 / gRPC :9085)<br/>+ TigerBeetle Go Client"]
+            LDG_Wrk["Ledger Outbox & Pipelined Worker<br/>(DeliveryWindow = 16)"]
             LDG_Cat["Project-Catchup CLI"]
         end
     end
 
-    subgraph DataLayer["Data & Messaging Tier (AWS RDS, DocumentDB, ElastiCache, MSK)"]
+    subgraph DataLayer["Data & Messaging Tier (TigerBeetle, AWS RDS, DocumentDB, ElastiCache, MSK)"]
+        TB[("TigerBeetle Financial Ledger<br/>(Cluster ID 0, Direct I/O :3000)<br/>• debits/credits_posted<br/>• Viewstamped Replication")]
         PG_IAM[("PostgreSQL 18<br/>Schema: iam")]
         PG_USR[("PostgreSQL 18<br/>Schema: users")]
-        PG_LDG[("PostgreSQL 18<br/>Schema: ledger")]
+        PG_LDG[("PostgreSQL 18 (Metadata & Projections)<br/>Schema: ledger")]
         Mongo[("MongoDB 8 / DocumentDB<br/>(Auth Sessions & Password Reset)")]
         Valkey[("Valkey 9 / ElastiCache<br/>(L2 Security State, Leases, Claims Cache)")]
         Kafka{{"Apache Kafka / AWS MSK<br/>(38 Canonical Event Streams)"}}
@@ -363,6 +372,7 @@ graph TB
     USR_Wrk --> Kafka
     USR_Wrk --> PG_USR
 
+    LDG_Srv --> TB
     LDG_Srv --> PG_LDG
     LDG_Srv --> Valkey
     LDG_Wrk --> PG_LDG
@@ -458,14 +468,16 @@ flowchart TB
     end
 
     subgraph Infrastructure["Infrastructure Layer (internal/infrastructure)"]
-        PG["PostgreSQL Adapters<br/>(pgx/v5, Single CTE SQL)"]
+        TB["TigerBeetle Adapter<br/>(tigerbeetle-go, Direct I/O, uint128)"]
+        PG["PostgreSQL Adapters<br/>(pgx/v5, Projections & Metadata)"]
         VK["Valkey L2 Leases<br/>(Lua Scripts, Lease Checks)"]
         OB["Outbox Publisher<br/>(Transactional Outbox Table)"]
     end
 
     Transport --> Application
     Application --> Domain
-    Infrastructure -. "implements" .-> Ports
+    TB -. "implements" .-> Ports
+    PG -. "implements" .-> Ports
     VK -. "implements" .-> Ports
     OB --> PG
 ```
@@ -535,7 +547,7 @@ sequenceDiagram
 
 
 
-# 4.2. Workflow 2: Atomic Double-Entry Ledger Posting & Idempotency
+# 4.2. Workflow 2: Atomic Double-Entry Ledger Posting & Idempotency (TigerBeetle Engine)
 
 
 ---
@@ -545,30 +557,40 @@ sequenceDiagram
     autonumber
     actor Caller as Client / Calling Service
     participant Handler as Ledger Handler (HTTP/gRPC)
-    participant Domain as Domain Aggregate (LedgerAggregate)
-    participant DB as PostgreSQL 18 (Single CTE Posting)
-    participant Outbox as Transactional Outbox Worker
+    participant Domain as Domain (Money & Uint128 Mapping)
+    participant TB as TigerBeetle Cluster (Direct I/O :3000)
+    participant DB as PostgreSQL 18 (Metadata & Outbox)
+    participant Outbox as Pipelined Worker Pool (DeliveryWindow = 16)
     participant Kafka as Apache Kafka (finance.ledger.events)
 
-    Caller->>Handler: PostAccounts(DebitAcc, CreditAcc, Amount, RequestID)
-    Handler->>Handler: Compute SHA-256 Frame Hash on Stack (0 B/op)
+    Caller->>Handler: PostAccounts(DebitUUID, CreditUUID, Amount, RequestID)
+    Handler->>Domain: Execute In-Memory Validation (Currency matching, Minor units)
+    Handler->>Domain: Map UUIDs to TigerBeetle Uint128 (UUIDToUint128, 0 B/op)
+    Domain-->>Handler: Uint128 (DebitID, CreditID, TransferID)
 
-    Handler->>Domain: Execute In-Memory Aggregate Validation
-    Note over Domain: Check debit/credit mathematical equality<br/>Check currency matching & minor unit limits
-    Domain-->>Handler: Validation Successful
+    Handler->>TB: CreateTransfers([]types.Transfer)
+    Note over TB: Deterministic Storage Engine (Direct I/O, IPC_LOCK):<br/>1. Atomic balance verification & limits check<br/>2. Native idempotency by Transfer ID<br/>3. Real-time debits/credits_posted accumulation<br/>4. Zero SQL row-locks & zero snapshot overhead
+    alt Validation Failure (e.g. ExceedsCredits / Invalid Account)
+        TB-->>Handler: TransferError (Result code)
+        Handler-->>Caller: 422 Unprocessable Entity / 409 Conflict
+    else Transfer Succeeded
+        TB-->>Handler: Transfer OK (0 errors, instant confirmation)
+        Handler->>DB: Store optional business metadata & outbox entry
+        Handler-->>Caller: 200 OK (TransferID, updated balance)
+    end
 
-    Handler->>DB: Execute CommitPosting (Single CTE Transaction)
-    Note over DB: 1. Verify idempotency hash (posting_requests)<br/>2. Update account balances (OCC version check)<br/>3. Insert into ledger_entries<br/>4. Append to ledger.events<br/>5. Schedule snapshot_jobs if tail >= 50<br/>6. Insert into outbox
-    DB-->>Handler: Commit Confirmed (1 DB Roundtrip)
-
-    Handler-->>Caller: 200 OK (Transaction Recorded)
-
-    par Asynchronous Outbox Event Emission
-        Outbox->>DB: Read Unprocessed Events (FOR UPDATE SKIP LOCKED)
+    par Asynchronous Pipelined Outbox Relay (DeliveryWindow = 16)
+        Outbox->>DB: Read Unprocessed Events
         Outbox->>Kafka: Publish Canonical Event (finance.ledger.posted)
         Outbox->>DB: Mark Outbox Record as Processed
     end
 ```
+
+### Key Architectural Invariants:
+1. **Single Source of Truth:** Account balances, transfer history, and multi-currency ledgers reside exclusively in TigerBeetle. Relational databases do not store duplicate ledger balances.
+2. **Native 128-bit Representation:** Account and transfer IDs use native `types.Uint128` values, with zero-allocation mapping between RFC 4122 UUIDs and TigerBeetle integers.
+3. **Zero Row-Lock Contention:** TigerBeetle executes transfers using a deterministic state machine and Viewstamped Replication, entirely avoiding SQL row lock queues and eliminating deadlocks on hot accounts.
+4. **Instant Balance Tracking:** Account balances (`CreditsPosted - DebitsPosted`) are updated in real-time in memory and committed via asynchronous Direct I/O (`io_uring`).
 
 ---
 
@@ -613,15 +635,15 @@ flowchart LR
 
 ```mermaid
 flowchart TD
-    Push["Push / Pull Request to Monorepo"] --> Setup["CI Setup: Go 1.26, Python, Postgres 18, Valkey, Mongo"]
-    Setup --> CodeCheck["Static Verification:<br/>gofmt, go vet, staticcheck, goimports"]
+    Push["Push / Pull Request to Monorepo"] --> Setup["CI Setup: Go 1.26, Python, Postgres 18, Valkey 9, Mongo 8, TigerBeetle 0.16"]
+    Setup --> CodeCheck["Static Verification & Security:<br/>gofmt, go vet, staticcheck v0.7.0, govulncheck"]
     CodeCheck --> ModCheck["Local Module Isolation Check:<br/>scripts/Check-LocalModules.py (GOWORK=off)"]
     ModCheck --> ArchAudit["Clean Architecture & AST Audit:<br/>scripts/Audit-Project.py (go/parser)"]
-    ArchAudit --> Tests["Race-Condition Tests:<br/>go test -race -shuffle=on ./..."]
+    ArchAudit --> Tests["Race-Condition & Integration Tests:<br/>go test -race -tags=integration -shuffle=on ./..."]
     Tests --> Bench["Automated Benchmark Execution:<br/>scripts/Collect-Benchmarks.py"]
-    Bench --> BenchGate{"Regression Barrier:<br/>Compare vs BENCHMARK-HISTORY.csv"}
-    BenchGate -- "Regression <= 20%" --> DashGen["Generate Visual Dashboard:<br/>benchmarks/BenchmarkCharts.py"]
-    BenchGate -- "Regression > 20%" --> Fail["Block Pipeline (CI Failed)"]
+    Bench --> BenchGate{"Regression Barrier:<br/>Compare vs PLATFORM-BENCHMARKS-LATEST.csv<br/>Zero-Alloc Pattern Invariant Enforcement"}
+    BenchGate -- "Regression <= Allowed Threshold" --> DashGen["Generate Visual Dashboard:<br/>benchmarks/BenchmarkCharts.py"]
+    BenchGate -- "Regression > Threshold / Extra Allocs" --> Fail["Block Pipeline (CI Failed)"]
     DashGen --> InfraVal["Infrastructure Validation:<br/>integra-infra/scripts/validate.sh (YAML, Helm, K8s, Terraform)"]
 ```
 
@@ -736,16 +758,17 @@ The public open-source core (`github.com/mateusz-kacpura/integra-core`) extracte
 
 Contains enterprise-grade utilities and security implementations:
 
-* **Authenticated Encryption (`pkg/aead`)**:
-  - `XChaCha20-Poly1305` authenticated cipher engine with automatic key derivation.
+* **Authenticated Encryption (`pkg/aead`, `pkg/crypto`)**:
+  - `XChaCha20-Poly1305` authenticated cipher engine with automatic key derivation. Optimized with `sync.Pool` 64KB buffers guaranteeing zero heap allocations (`0 B/op`, `0 allocs/op`) during large payload encryption/decryption.
 * **Multi-Tier Security & Authentication (`pkg/auth`)**:
-  - `JWTVerifier`: Asymmetric Ed25519 token verification with public key discovery.
-  - `L1Cache`: Cache-line padded (`[64]byte`) in-process lock-free cache resolving tokens in **36.5 ns**.
+  - `JWTVerifier`: Asymmetric Ed25519 token verification with public key discovery and non-blocking `Memo` singleflight cache pattern to eliminate stampedes on L1 cache misses.
+  - `L1Cache`: Cache-line padded (`[64]byte`) in-process lock-free cache resolving tokens in **35.2 ns**, featuring zero-alloc byte-slice lookups.
   - `AccountState`: Fast-invalidation lease checker synchronizing with Valkey L2.
 * **Role-Based Access Control (`pkg/rbac`)**:
-  - Parallel bitmask permission matrix checking permissions in **4.4 ns**.
+  - Parallel bitmask permission matrix checking permissions in **2.1 ns**.
 * **Distributed Messaging & Outbox (`pkg/kafka`, `pkg/outbox`)**:
-  - Reliable at-least-once message delivery with transactional outbox publishers and idempotency consumers.
+  - High-throughput Kafka client with worker pool batch pipelining (`DeliveryWindow = 16`), delivering a **15.75x speedup** (from 36.55 ms to 2.30 ms).
+  - Reliable at-least-once message delivery with transactional outbox publishers, leak-free reusable timers, and idempotency consumers.
 * **Security State Authority (`pkg/securitystate`)**:
   - Centralized role authority lease coordination backed by Valkey Lua scripts.
 
@@ -781,6 +804,7 @@ Contains enterprise-grade utilities and security implementations:
 * **Performance Architecture**:
   - Read replica projection caching delivering profile reads in **46.2 ns**.
   - Data-Oriented Design value slices eliminating heap allocations during bulk queries.
+  - **No-Op Update Filter**: Skips redundant database write queries when updated profile fields are identical to existing state.
 * **Event Handlers**:
   - Consumes `canonical.iam.user_registered` to initialize default profile projections and skills vectors.
 
@@ -795,9 +819,10 @@ Contains enterprise-grade utilities and security implementations:
 
 * **Core Responsibility**: Immutable double-entry financial accounting, multi-currency wallets, invoices, and payouts.
 * **Architectural Pillars**:
-  - **Single CTE Transaction (`CommitPosting`)**: Atomically verifies OCC balance, inserts ledger journal entries, appends to immutable event store (`ledger.events`), and emits to outbox in 1 database roundtrip.
-  - **Memory Arenas & Stack Hashing**: SHA-256 request frames hashed in `[512]byte` stack buffers (`0 B/op`).
-  - **Snapshots Engine (`snapshot_jobs`)**: Periodic state snapshotting delivering a **45x read speedup** for historical accounts (`tail_0` in 25.3 ns).
+  - **TigerBeetle Storage Engine (`internal/infrastructure/tigerbeetle`)**: Native binary direct I/O client executing atomic batch transfers (`client.CreateTransfers`) and account lookups (`client.LookupAccounts`). Fully eliminates relational SQL row locks (`SELECT ... FOR UPDATE`) and background snapshot computation jobs.
+  - **Zero-Alloc 128-bit ID Mapping (`id.go`)**: Bi-directional conversion between RFC 4122 UUID and TigerBeetle `types.Uint128` (`UUIDToUint128`, `Uint128ToUUID`).
+  - **Memory Arenas & Stack Hashing**: SHA-256 request frames hashed in `[512]byte` stack buffers (`RequestDigest`, `200.9 ns/op`, `0 B/op`).
+  - **Fast Decimal Arithmetic**: Minor-unit integer representations and `ParseScaledDecimal` (`35.77 ns/op`, `0 B/op`).
   - `cmd/project-catchup`: Production projection rebuild tool.
 
 ---
@@ -810,7 +835,7 @@ Contains enterprise-grade utilities and security implementations:
 ---
 
 * **Edge Cluster (`deploy/edge`)**: BunkerWeb WAF, ModSecurity CRS, automatic Let's Encrypt TLS renewal, rate limiting (100 req/s), and antibot rules.
-* **Kubernetes & Helm (`deploy/k8s`, `deploy/helm`)**: Full Helm charts for production microservices, Linkerd mTLS service mesh, and horizontal pod autoscalers (HPA).
+* **Kubernetes & Helm (`deploy/k8s`, `deploy/helm`)**: Full Helm charts for production microservices, TigerBeetle StatefulSet (`deploy/k8s/infra/tigerbeetle.yaml` with Direct I/O and `IPC_LOCK`), Linkerd mTLS service mesh, and horizontal pod autoscalers (HPA).
 * **Terraform IaC (`deploy/terraform`)**: AWS infrastructure provisioning (EKS, RDS PostgreSQL 18, ElastiCache Valkey, MSK Kafka, DocumentDB).
 * **Observability Stack (`monitoring/`)**: Jaeger OpenTelemetry distributed tracing, Prometheus alert rules, Grafana Loki log aggregation, and customized dashboards.
 

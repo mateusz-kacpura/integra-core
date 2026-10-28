@@ -420,17 +420,16 @@ Najbardziej zaawansowany obliczeniowo mikroserwis w ekosystemie, realizujący op
 * `app/`: `operations.go`, `access_service.go`, `commands/handlers.go`, `commands/integration.go`, `queries/handlers.go`, `ports/` (`access_ports.go`, `payout.go`, `posting.go`, `publication.go`, `repository.go`, `tenant.go`).
 
 
+* `infrastructure/tigerbeetle/`:
+* `client.go`, `client_test.go`: Inicjalizacja binarnego klienta Go (`github.com/tigerbeetle/tigerbeetle-go`) z adresem klastra, ID klastra i obsługą Direct I/O.
+* `id.go`, `id_test.go`: Bezalokacyjna konwersja RFC 4122 UUID $\leftrightarrow$ 128-bitowe liczby całkowite TigerBeetle (`UUIDToUint128`, `Uint128ToUUID`).
+* `repository.go`, `repository_test.go`: Implementacja portów `AccountRepository` i `PostingRepository` z bezpośrednią obsługą `client.CreateTransfers` i `client.LookupAccounts`, atomową weryfikacją debetów/kredytów i eliminacją blokad SQL `SELECT ... FOR UPDATE`.
+
+
 * `infrastructure/postgres/`:
-* `posting.go`: Transakcyjne księgowanie `PostAccounts` z blokadami wierszy i pojedynczym CTE `CommitPosting`.
-
-
 * `request_hash.go`: Binarne ramkowanie żądań na buforze stosowym `[512]byte` i wyliczanie 33-bajtowego skrótu idempotentności SHA-256 (`RequestDigest`, `200.9 ns/op`, `0 B/op`).
-
-
-* `event_store.go`, `event_codec.go`, `account_snapshots.go`, `snapshot_codec.go`: Zapis i odczyt zdarzeń oraz migawek z pulą buforów serializacyjnych (`490.1 ns/op`).
-
-
-* `invoice_store.go`, `invoice_codec.go`, `payout_store.go`, `projections.go`, `outbox.go`, `tenant.go`, `audit.go`, `metrics.go`.
+* `event_store.go`, `event_codec.go`: Zapis i odczyt zdarzeń audytowych z pulą buforów serializacyjnych.
+* `invoice_store.go`, `invoice_codec.go`, `payout_store.go`, `projections.go`, `outbox.go`, `tenant.go`, `audit.go`, `metrics.go`: Asynchroniczny magazyn metadanych biznesowych, faktur, wypłat i relacji wielodzierżawczych.
 
 
 
@@ -460,7 +459,7 @@ Kompletna definicja **Infrastructure as Code (IaC)** oraz narzędzi DevSecOps/SR
 * `Chart.yaml`, `values.yaml`, `templates/` (`microservice.yaml`, `linkerd.yaml`, `network-policy.yaml`, `configmap.yaml`, `secrets.yaml`, `_helpers.tpl`): Uniwersalny szablon wdrożeniowy Kubernetes obsługujący adnotacje siatki usług **Linkerd mTLS**, polityki sieciowe Zero-Trust (`NetworkPolicy`) oraz autoskalowanie poziome **HPA** (2–10 replik przy 70% CPU).
 
 
-* `deploy/k8s/infra/`: Manifesty dla klastrów `postgresql.yaml`, `mongodb.yaml`, `valkey.yaml`, `kafka.yaml`, `jaeger.yaml`, `loki.yaml`, `monitoring.yaml`.
+* `deploy/k8s/infra/`: Manifesty dla klastrów `tigerbeetle.yaml` (StatefulSet TigerBeetle z Direct I/O, `IPC_LOCK` i portem 3000), `postgresql.yaml`, `mongodb.yaml`, `valkey.yaml`, `kafka.yaml`, `jaeger.yaml`, `loki.yaml`, `monitoring.yaml`.
 
 
 

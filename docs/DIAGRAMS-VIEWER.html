@@ -425,16 +425,17 @@
         end
 
         subgraph LEDGER[&quot;integra-ledger-service&quot;]
-            LDG_Srv[&quot;Ledger Server&lt;br/&gt;(HTTP :8085 / gRPC :9085)&quot;]
-            LDG_Wrk[&quot;Ledger Outbox &amp; Snapshot Worker&quot;]
+            LDG_Srv[&quot;Ledger Server&lt;br/&gt;(HTTP :8085 / gRPC :9085)&lt;br/&gt;+ TigerBeetle Go Client&quot;]
+            LDG_Wrk[&quot;Ledger Outbox &amp; Pipelined Worker&lt;br/&gt;(DeliveryWindow = 16)&quot;]
             LDG_Cat[&quot;Project-Catchup CLI&quot;]
         end
     end
 
-    subgraph DataLayer[&quot;Warstwa danych i komunikacji (AWS RDS, DocumentDB, ElastiCache, MSK)&quot;]
+    subgraph DataLayer[&quot;Warstwa danych i komunikacji (TigerBeetle, AWS RDS, DocumentDB, ElastiCache, MSK)&quot;]
+        TB[(&quot;TigerBeetle Financial Ledger&lt;br/&gt;(Cluster ID 0, Direct I/O :3000)&lt;br/&gt;• debits/credits_posted&lt;br/&gt;• Viewstamped Replication&quot;)]
         PG_IAM[(&quot;PostgreSQL 18&lt;br/&gt;Schema: iam&quot;)]
         PG_USR[(&quot;PostgreSQL 18&lt;br/&gt;Schema: users&quot;)]
-        PG_LDG[(&quot;PostgreSQL 18&lt;br/&gt;Schema: ledger&quot;)]
+        PG_LDG[(&quot;PostgreSQL 18 (Metadane &amp; Projekcje)&lt;br/&gt;Schema: ledger&quot;)]
         Mongo[(&quot;MongoDB 8 / DocumentDB&lt;br/&gt;(Sesje Auth &amp; Password Reset)&quot;)]
         Valkey[(&quot;Valkey 9 / ElastiCache&lt;br/&gt;(L2 Security State, Leases, Claims Cache)&quot;)]
         Kafka{{&quot;Apache Kafka / AWS MSK&lt;br/&gt;(38 Kanonicznych Tematów Zdarzeń)&quot;}}
@@ -475,6 +476,7 @@
     USR_Wrk &lt;--&gt; Kafka
     USR_Wrk --&gt; PG_USR
 
+    LDG_Srv --&gt; TB
     LDG_Srv --&gt; PG_LDG
     LDG_Srv --&gt; Valkey
     LDG_Wrk &lt;--&gt; Kafka
@@ -605,6 +607,7 @@
     end
 
     subgraph InfraLayer[&quot;Warstwa infrastruktury (internal/infrastructure)&quot;]
+        TB[&quot;TigerBeetle Adapter (tigerbeetle-go)&lt;br/&gt;AccountRepository &amp; PostingRepository&lt;br/&gt;Uint128 ID Mapping, Direct I/O&quot;]
         PG[&quot;PostgreSQL Repository (pgx/v5 + sqlc)&lt;br/&gt;Unit of Work / Single-CTE Atomic Commit&quot;]
         MG[&quot;MongoDB Repository&lt;br/&gt;(Sesje Auth, Tokeny Refresh, Reset Haseł)&quot;]
         VK[&quot;Valkey Adapter&lt;br/&gt;(L2 Claims Cache, SecurityState, Leases)&quot;]
@@ -620,6 +623,7 @@
     Cmds --&gt; Events
     Cmds --&gt; Ports
     Qrys --&gt; Ports
+    TB -. &quot;implementuje&quot; .-&gt; Ports
     PG -. &quot;implementuje&quot; .-&gt; Ports
     MG -. &quot;implementuje&quot; .-&gt; Ports
     VK -. &quot;implementuje&quot; .-&gt; Ports
@@ -723,42 +727,33 @@
     autonumber
     actor Caller as Klient / Usługa Zlecająca
     participant Srv as Ledger Service (PostAccounts)
-    participant Dom as Domain (Money &amp; PostingHash)
-    participant DB as PostgreSQL (Schema: ledger)
-    participant Wrk as Outbox &amp; Snapshot Worker
+    participant Dom as Domain (Money &amp; TB ID Mapping)
+    participant TB as TigerBeetle Cluster (Direct I/O :3000)
+    participant DB as PostgreSQL (Metadane &amp; Outbox)
+    participant Wrk as Pipelined Worker Pool (DeliveryWindow = 16)
     participant Kafka as Broker Kafka
 
-    Caller-&gt;&gt;Srv: RecordTransaction (DebitID, CreditID, Amount, Currency, IdempotencyKey, ExpectedVersions)
+    Caller-&gt;&gt;Srv: RecordTransaction (DebitUUID, CreditUUID, Amount, Currency, IdempotencyKey)
     Srv-&gt;&gt;Srv: Weryfikacja zgodności TenantID z kontekstem tożsamości
-    Srv-&gt;&gt;Dom: Obliczenie 33-bajtowego skrótu binarnego RequestDigest v2 (SHA-256, 200.9 ns, 0 B/op)
-    Dom--&gt;&gt;Srv: RequestDigest [33]byte
+    Srv-&gt;&gt;Dom: Walidacja domenowa: Currency match, MinorUnits (int64)
+    Srv-&gt;&gt;Dom: Mapowanie UUID na 128-bitowe identyfikatory (UUIDToUint128, 0 B/op)
+    Dom--&gt;&gt;Srv: Uint128 (DebitID, CreditID, TransferID)
 
-    Srv-&gt;&gt;DB: BEGIN TRANSACTION
-    Srv-&gt;&gt;DB: ClaimAndLockPostingAccounts (Blokada wierszy FOR UPDATE + sprawdzenie IdempotencyKey)
-    alt IdempotencyKey już istnieje z tym samym RequestDigest
-        DB--&gt;&gt;Srv: Zwrócenie istniejącego TransactionID (Powtórzenie idempotentne)
-        Srv-&gt;&gt;DB: ROLLBACK
-        Srv--&gt;&gt;Caller: 200 OK (Istniejący TransactionID)
-    else IdempotencyKey istnieje z INNYM RequestDigest
-        DB--&gt;&gt;Srv: Błąd konfliktu parametrów
-        Srv-&gt;&gt;DB: ROLLBACK
-        Srv--&gt;&gt;Caller: 409 Conflict (Naruszenie kontraktu idempotentności)
-    else Nowa transakcja
-        Srv-&gt;&gt;Dom: Walidacja domenowa: Currency match, MinorUnits (int64), Optimistic Locking Versions
-        Srv-&gt;&gt;DB: Wykonanie pojedynczego zapytania CTE CommitPosting:
-        Note right of DB: 1. UPDATE ledger_accounts (Debit &amp; Credit, version + 1)&lt;br/&gt;2. INSERT INTO account_events (historia sald)&lt;br/&gt;3. INSERT INTO snapshot_jobs (jeśli version % interval == 0)&lt;br/&gt;4. INSERT INTO events (Event Store)&lt;br/&gt;5. INSERT INTO ledger_entries (dziennik księgowy)&lt;br/&gt;6. UPDATE posting_requests (Zapis wyniku idempotentnego)&lt;br/&gt;7. INSERT INTO outbox (Zdarzenie z nagłówkami W3C Trace)
-        DB--&gt;&gt;Srv: Zatwierdzony wiersz transakcji
-        Srv-&gt;&gt;DB: COMMIT TRANSACTION
-        Srv--&gt;&gt;Caller: 200 OK (TransactionID, RecordedAt)
+    Srv-&gt;&gt;TB: CreateTransfers([]types.Transfer)
+    Note over TB: Deterministyczne jądro bazy (Direct I/O, IPC_LOCK):&lt;br/&gt;1. Atomowa weryfikacja sald i debits/credits_posted&lt;br/&gt;2. Natywna idempotencyjność po Transfer ID (brak duplikatów)&lt;br/&gt;3. Brak blokad wierszy SQL i zerowy koszt kalkulacji migawek
+    alt Błąd walidacji w TigerBeetle (np. brak środków / nieprawidłowe konto)
+        TB--&gt;&gt;Srv: TransferError (ExceedsCredits, AccountsMustBeDifferent, etc.)
+        Srv--&gt;&gt;Caller: 422 Unprocessable Entity / 409 Conflict
+    else Sukces transferu w TigerBeetle
+        TB--&gt;&gt;Srv: Transfer OK (0 błędów, potwierdzenie natychmiastowe)
+        Srv-&gt;&gt;DB: Zapis opcjonalnych metadanych biznesowych i zdarzenia w Outbox
+        Srv--&gt;&gt;Caller: 200 OK (TransferID, Saldo zaktualizowane)
     end
 
-    par Asynchroniczna publikacja i migawki
+    par Asynchroniczny potok publikacji (Pipelined Outbox Relay)
         Wrk-&gt;&gt;DB: Pobranie nieopublikowanych rekordów z ledger.outbox
-        Wrk-&gt;&gt;Kafka: Publikacja na temat &quot;ledger-updated&quot; (z propagacją traceparent &amp; correlation_id)
+        Wrk-&gt;&gt;Kafka: Publikacja wsadowa na temat &quot;ledger-updated&quot; (DeliveryWindow = 16, kanał buforowany)
         Wrk-&gt;&gt;DB: Oznaczenie published = true w ledger.outbox
-    and Budowanie migawek kont
-        Wrk-&gt;&gt;DB: Pobranie zadań z ledger.snapshot_jobs
-        Wrk-&gt;&gt;DB: Zapis skonsolidowanego AccountSnapshot (przyspieszenie odczytu 45.2x)
     end
 </pre>
         </div>
@@ -860,16 +855,16 @@
       <div class="viewport-container" id="viewport-diag-9">
         <div class="panzoom-layer" id="layer-diag-9">
           <pre class="mermaid" id="mermaid-diag-9">flowchart TD
-    Push[&quot;Push / Pull Request do Monorepo&quot;] --&gt; Setup[&quot;Inicjalizacja środowiska Go 1.26 (GOWORK=off, CGO_ENABLED=1)&lt;br/&gt;Start kontenerów: 3x Postgres 18, MongoDB 8, Valkey 9&quot;]
-    Setup --&gt; Audit[&quot;scripts/Audit-Project.py&lt;br/&gt;Weryfikacja każdego modułu w izolacji (go vet, staticcheck v0.7.0)&quot;]
+    Push[&quot;Push / Pull Request do Monorepo&quot;] --&gt; Setup[&quot;Inicjalizacja środowiska Go 1.26 (GOWORK=off, CGO_ENABLED=1)&lt;br/&gt;Start kontenerów: Postgres 18, Mongo 8, Valkey 9, TigerBeetle 0.16 (scratch)&quot;]
+    Setup --&gt; Audit[&quot;scripts/Audit-Project.py&lt;br/&gt;Weryfikacja modułów w izolacji (format, tidy, build, vet, staticcheck v0.7.0)&quot;]
     Audit --&gt; Vuln[&quot;govulncheck ./...&lt;br/&gt;Skanowanie podatności CVE w drzewie zależności&quot;]
     Vuln --&gt; Codegen[&quot;Weryfikacja generatorów kodu:&lt;br/&gt;check-sqlc.py (spójność SQL) &amp; check-proto.py (spójność Buf Protobuf)&quot;]
     Codegen --&gt; UnitTests[&quot;Testy jednostkowe i architektoniczne AST:&lt;br/&gt;go test -race -shuffle=on -mod=readonly ./...&quot;]
     UnitTests --&gt; Migrate[&quot;Migracja izolowanych baz testowych:&lt;br/&gt;init-prod-pg.sql + cmd/migrate (IAM, User, Ledger)&quot;]
-    Migrate --&gt; IntTests[&quot;Testy integracyjne z detektorem wyścigów:&lt;br/&gt;-tags=integration -race (Postgres, Mongo, Valkey, Kafka)&quot;]
-    IntTests --&gt; BenchGate{&quot;Bramka Wydajnościowa:&lt;br/&gt;Collect-Benchmarks.py&lt;br/&gt;(--max-regression-pct 20.0)&quot;}
-    BenchGate -- &quot;Brak regresji &gt; 20%&quot; --&gt; DashGen[&quot;Generowanie wykresów SVG, Mermaid&lt;br/&gt;i BENCHMARKS-DASHBOARD.html&quot;]
-    BenchGate -- &quot;Wykryto regresję &gt; 20%&quot; --&gt; Fail[&quot;Blokada Pipeline&#x27;u (CI Failed)&quot;]
+    Migrate --&gt; IntTests[&quot;Testy integracyjne z detektorem wyścigów:&lt;br/&gt;-tags=integration -race (Postgres, Mongo, Valkey, Kafka, TigerBeetle)&quot;]
+    IntTests --&gt; BenchGate{&quot;Bramka Wydajnościowa:&lt;br/&gt;Collect-Benchmarks.py&lt;br/&gt;(Zero-Alloc Invariants, Jitter Filter, Scaled Regression Gate)&quot;}
+    BenchGate -- &quot;Brak regresji&quot; --&gt; DashGen[&quot;Generowanie wykresów SVG, Mermaid&lt;br/&gt;i BENCHMARKS-DASHBOARD.html&quot;]
+    BenchGate -- &quot;Wykryto regresję / Alokacje&quot; --&gt; Fail[&quot;Blokada Pipeline&#x27;u (CI Failed)&quot;]
     DashGen --&gt; InfraVal[&quot;Walidacja Infrastruktury:&lt;br/&gt;integra-infra/scripts/validate.sh (YAML, Helm, K8s, Terraform)&quot;]
 </pre>
         </div>

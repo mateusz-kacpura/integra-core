@@ -72,26 +72,30 @@ sequenceDiagram
     autonumber
     actor Caller as Client / Calling Service
     participant Handler as Ledger Handler (HTTP/gRPC)
-    participant Domain as Domain Aggregate (LedgerAggregate)
-    participant DB as PostgreSQL 18 (Single CTE Posting)
-    participant Outbox as Transactional Outbox Worker
+    participant Domain as Domain (Money & Uint128 Mapping)
+    participant TB as TigerBeetle Cluster (Direct I/O :3000)
+    participant DB as PostgreSQL 18 (Metadata & Outbox)
+    participant Outbox as Pipelined Worker Pool (DeliveryWindow = 16)
     participant Kafka as Apache Kafka (finance.ledger.events)
 
-    Caller->>Handler: PostAccounts(DebitAcc, CreditAcc, Amount, RequestID)
-    Handler->>Handler: Compute SHA-256 Frame Hash on Stack (0 B/op)
+    Caller->>Handler: PostAccounts(DebitUUID, CreditUUID, Amount, RequestID)
+    Handler->>Domain: Execute In-Memory Validation (Currency matching, Minor units)
+    Handler->>Domain: Map UUIDs to TigerBeetle Uint128 (UUIDToUint128, 0 B/op)
+    Domain-->>Handler: Uint128 (DebitID, CreditID, TransferID)
 
-    Handler->>Domain: Execute In-Memory Aggregate Validation
-    Note over Domain: Check debit/credit mathematical equality<br/>Check currency matching & minor unit limits
-    Domain-->>Handler: Validation Successful
+    Handler->>TB: CreateTransfers([]types.Transfer)
+    Note over TB: Deterministic Storage Engine (Direct I/O, IPC_LOCK):<br/>1. Atomic balance verification & limits check<br/>2. Native idempotency by Transfer ID<br/>3. Real-time debits/credits_posted accumulation<br/>4. Zero SQL row-locks & zero snapshot overhead
+    alt Validation Failure (e.g. ExceedsCredits / Invalid Account)
+        TB-->>Handler: TransferError (Result code)
+        Handler-->>Caller: 422 Unprocessable Entity / 409 Conflict
+    else Transfer Succeeded
+        TB-->>Handler: Transfer OK (0 errors, instant confirmation)
+        Handler->>DB: Store optional business metadata & outbox entry
+        Handler-->>Caller: 200 OK (TransferID, updated balance)
+    end
 
-    Handler->>DB: Execute CommitPosting (Single CTE Transaction)
-    Note over DB: 1. Verify idempotency hash (posting_requests)<br/>2. Update account balances (OCC version check)<br/>3. Insert into ledger_entries<br/>4. Append to ledger.events<br/>5. Schedule snapshot_jobs if tail >= 50<br/>6. Insert into outbox
-    DB-->>Handler: Commit Confirmed (1 DB Roundtrip)
-
-    Handler-->>Caller: 200 OK (Transaction Recorded)
-
-    par Asynchronous Outbox Event Emission
-        Outbox->>DB: Read Unprocessed Events (FOR UPDATE SKIP LOCKED)
+    par Asynchronous Pipelined Outbox Relay (DeliveryWindow = 16)
+        Outbox->>DB: Read Unprocessed Events
         Outbox->>Kafka: Publish Canonical Event (finance.ledger.posted)
         Outbox->>DB: Mark Outbox Record as Processed
     end
@@ -144,15 +148,15 @@ flowchart LR
 
 ```mermaid
 flowchart TD
-    Push["Push / Pull Request to Monorepo"] --> Setup["CI Setup: Go 1.26, Python, Postgres 18, Valkey, Mongo"]
-    Setup --> CodeCheck["Static Verification:<br/>gofmt, go vet, staticcheck, goimports"]
+    Push["Push / Pull Request to Monorepo"] --> Setup["CI Setup: Go 1.26, Python, Postgres 18, Valkey 9, Mongo 8, TigerBeetle 0.16"]
+    Setup --> CodeCheck["Static Verification & Security:<br/>gofmt, go vet, staticcheck v0.7.0, govulncheck"]
     CodeCheck --> ModCheck["Local Module Isolation Check:<br/>scripts/Check-LocalModules.py (GOWORK=off)"]
     ModCheck --> ArchAudit["Clean Architecture & AST Audit:<br/>scripts/Audit-Project.py (go/parser)"]
-    ArchAudit --> Tests["Race-Condition Tests:<br/>go test -race -shuffle=on ./..."]
+    ArchAudit --> Tests["Race-Condition & Integration Tests:<br/>go test -race -tags=integration -shuffle=on ./..."]
     Tests --> Bench["Automated Benchmark Execution:<br/>scripts/Collect-Benchmarks.py"]
-    Bench --> BenchGate{"Regression Barrier:<br/>Compare vs BENCHMARK-HISTORY.csv"}
-    BenchGate -- "Regression <= 20%" --> DashGen["Generate Visual Dashboard:<br/>benchmarks/BenchmarkCharts.py"]
-    BenchGate -- "Regression > 20%" --> Fail["Block Pipeline (CI Failed)"]
+    Bench --> BenchGate{"Regression Barrier:<br/>Compare vs PLATFORM-BENCHMARKS-LATEST.csv<br/>Zero-Alloc Pattern Invariant Enforcement"}
+    BenchGate -- "Regression <= Allowed Threshold" --> DashGen["Generate Visual Dashboard:<br/>benchmarks/BenchmarkCharts.py"]
+    BenchGate -- "Regression > Threshold / Extra Allocs" --> Fail["Block Pipeline (CI Failed)"]
     DashGen --> InfraVal["Infrastructure Validation:<br/>integra-infra/scripts/validate.sh (YAML, Helm, K8s, Terraform)"]
 ```
 

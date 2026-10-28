@@ -60,53 +60,43 @@ sequenceDiagram
 
 ---
 
-### 4.2. Przepływ 2: Atomowe księgowanie podwójnego zapisu (Double-Entry Ledger Posting & Idempotency)
+### 4.2. Przepływ 2: Atomowe księgowanie podwójnego zapisu (TigerBeetle Financial Ledger & Idempotency)
 
-Przepływ pracy w `integra-ledger-service` podczas wykonywania operacji `PostAccounts` (`internal/infrastructure/postgres/posting.go` oraz `db/queries/posting_commit.sql`):
+Przepływ pracy w `integra-ledger-service` z TigerBeetle jako autorytatywnym źródłem prawdy dla sald i transferów (`internal/infrastructure/tigerbeetle/repository.go` oraz `internal/app/commands/handlers.go`):
 
 ```mermaid
 sequenceDiagram
     autonumber
     actor Caller as Klient / Usługa Zlecająca
     participant Srv as Ledger Service (PostAccounts)
-    participant Dom as Domain (Money & PostingHash)
-    participant DB as PostgreSQL (Schema: ledger)
-    participant Wrk as Outbox & Snapshot Worker
+    participant Dom as Domain (Money & TB ID Mapping)
+    participant TB as TigerBeetle Cluster (Direct I/O :3000)
+    participant DB as PostgreSQL (Metadane & Outbox)
+    participant Wrk as Pipelined Worker Pool (DeliveryWindow = 16)
     participant Kafka as Broker Kafka
 
-    Caller->>Srv: RecordTransaction (DebitID, CreditID, Amount, Currency, IdempotencyKey, ExpectedVersions)
+    Caller->>Srv: RecordTransaction (DebitUUID, CreditUUID, Amount, Currency, IdempotencyKey)
     Srv->>Srv: Weryfikacja zgodności TenantID z kontekstem tożsamości
-    Srv->>Dom: Obliczenie 33-bajtowego skrótu binarnego RequestDigest v2 (SHA-256, 200.9 ns, 0 B/op)
-    Dom-->>Srv: RequestDigest [33]byte
+    Srv->>Dom: Walidacja domenowa: Currency match, MinorUnits (int64)
+    Srv->>Dom: Mapowanie UUID na 128-bitowe identyfikatory (UUIDToUint128, 0 B/op)
+    Dom-->>Srv: Uint128 (DebitID, CreditID, TransferID)
 
-    Srv->>DB: BEGIN TRANSACTION
-    Srv->>DB: ClaimAndLockPostingAccounts (Blokada wierszy FOR UPDATE + sprawdzenie IdempotencyKey)
-    alt IdempotencyKey już istnieje z tym samym RequestDigest
-        DB-->>Srv: Zwrócenie istniejącego TransactionID (Powtórzenie idempotentne)
-        Srv->>DB: ROLLBACK
-        Srv-->>Caller: 200 OK (Istniejący TransactionID)
-    else IdempotencyKey istnieje z INNYM RequestDigest
-        DB-->>Srv: Błąd konfliktu parametrów
-        Srv->>DB: ROLLBACK
-        Srv-->>Caller: 409 Conflict (Naruszenie kontraktu idempotentności)
-    else Nowa transakcja
-        Srv->>Dom: Walidacja domenowa: Currency match, MinorUnits (int64), Optimistic Locking Versions
-        Srv->>DB: Wykonanie pojedynczego zapytania CTE CommitPosting:
-        Note right of DB: 1. UPDATE ledger_accounts (Debit & Credit, version + 1)<br/>2. INSERT INTO account_events (historia sald)<br/>3. INSERT INTO snapshot_jobs (jeśli version % interval == 0)<br/>4. INSERT INTO events (Event Store)<br/>5. INSERT INTO ledger_entries (dziennik księgowy)<br/>6. UPDATE posting_requests (Zapis wyniku idempotentnego)<br/>7. INSERT INTO outbox (Zdarzenie z nagłówkami W3C Trace)
-        DB-->>Srv: Zatwierdzony wiersz transakcji
-        Srv->>DB: COMMIT TRANSACTION
-        Srv-->>Caller: 200 OK (TransactionID, RecordedAt)
+    Srv->>TB: CreateTransfers([]types.Transfer)
+    Note over TB: Deterministyczne jądro bazy (Direct I/O, IPC_LOCK):<br/>1. Atomowa weryfikacja sald i debits/credits_posted<br/>2. Natywna idempotencyjność po Transfer ID (brak duplikatów)<br/>3. Brak blokad wierszy SQL i zerowy koszt kalkulacji migawek
+    alt Błąd walidacji w TigerBeetle (np. brak środków / nieprawidłowe konto)
+        TB-->>Srv: TransferError (ExceedsCredits, AccountsMustBeDifferent, etc.)
+        Srv-->>Caller: 422 Unprocessable Entity / 409 Conflict
+    else Sukces transferu w TigerBeetle
+        TB-->>Srv: Transfer OK (0 błędów, potwierdzenie natychmiastowe)
+        Srv->>DB: Zapis opcjonalnych metadanych biznesowych i zdarzenia w Outbox
+        Srv-->>Caller: 200 OK (TransferID, Saldo zaktualizowane)
     end
 
-    par Asynchroniczna publikacja i migawki
+    par Asynchroniczny potok publikacji (Pipelined Outbox Relay)
         Wrk->>DB: Pobranie nieopublikowanych rekordów z ledger.outbox
-        Wrk->>Kafka: Publikacja na temat "ledger-updated" (z propagacją traceparent & correlation_id)
+        Wrk->>Kafka: Publikacja wsadowa na temat "ledger-updated" (DeliveryWindow = 16, kanał buforowany)
         Wrk->>DB: Oznaczenie published = true w ledger.outbox
-    and Budowanie migawek kont
-        Wrk->>DB: Pobranie zadań z ledger.snapshot_jobs
-        Wrk->>DB: Zapis skonsolidowanego AccountSnapshot (przyspieszenie odczytu 45.2x)
     end
-
 ```
 
 ---
@@ -168,18 +158,17 @@ Przepływ zdefiniowany w `.github/workflows/ci.yaml`, `scripts/Audit-Project.py`
 
 ```mermaid
 flowchart TD
-    Push["Push / Pull Request do Monorepo"] --> Setup["Inicjalizacja środowiska Go 1.26 (GOWORK=off, CGO_ENABLED=1)<br/>Start kontenerów: 3x Postgres 18, MongoDB 8, Valkey 9"]
-    Setup --> Audit["scripts/Audit-Project.py<br/>Weryfikacja każdego modułu w izolacji (go vet, staticcheck v0.7.0)"]
+    Push["Push / Pull Request do Monorepo"] --> Setup["Inicjalizacja środowiska Go 1.26 (GOWORK=off, CGO_ENABLED=1)<br/>Start kontenerów: Postgres 18, Mongo 8, Valkey 9, TigerBeetle 0.16 (scratch)"]
+    Setup --> Audit["scripts/Audit-Project.py<br/>Weryfikacja modułów w izolacji (format, tidy, build, vet, staticcheck v0.7.0)"]
     Audit --> Vuln["govulncheck ./...<br/>Skanowanie podatności CVE w drzewie zależności"]
     Vuln --> Codegen["Weryfikacja generatorów kodu:<br/>check-sqlc.py (spójność SQL) & check-proto.py (spójność Buf Protobuf)"]
     Codegen --> UnitTests["Testy jednostkowe i architektoniczne AST:<br/>go test -race -shuffle=on -mod=readonly ./..."]
     UnitTests --> Migrate["Migracja izolowanych baz testowych:<br/>init-prod-pg.sql + cmd/migrate (IAM, User, Ledger)"]
-    Migrate --> IntTests["Testy integracyjne z detektorem wyścigów:<br/>-tags=integration -race (Postgres, Mongo, Valkey, Kafka)"]
-    IntTests --> BenchGate{"Bramka Wydajnościowa:<br/>Collect-Benchmarks.py<br/>(--max-regression-pct 20.0)"}
-    BenchGate -- "Brak regresji > 20%" --> DashGen["Generowanie wykresów SVG, Mermaid<br/>i BENCHMARKS-DASHBOARD.html"]
-    BenchGate -- "Wykryto regresję > 20%" --> Fail["Blokada Pipeline'u (CI Failed)"]
+    Migrate --> IntTests["Testy integracyjne z detektorem wyścigów:<br/>-tags=integration -race (Postgres, Mongo, Valkey, Kafka, TigerBeetle)"]
+    IntTests --> BenchGate{"Bramka Wydajnościowa:<br/>Collect-Benchmarks.py<br/>(Zero-Alloc Invariants, Jitter Filter, Scaled Regression Gate)"}
+    BenchGate -- "Brak regresji" --> DashGen["Generowanie wykresów SVG, Mermaid<br/>i BENCHMARKS-DASHBOARD.html"]
+    BenchGate -- "Wykryto regresję / Alokacje" --> Fail["Blokada Pipeline'u (CI Failed)"]
     DashGen --> InfraVal["Walidacja Infrastruktury:<br/>integra-infra/scripts/validate.sh (YAML, Helm, K8s, Terraform)"]
-
 ```
 
 ---

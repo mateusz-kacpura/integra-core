@@ -190,14 +190,18 @@ Zgodnie z najlepszymi praktykami inżynierii wydajności w Go, decyzje architekt
 
 
 
-5. **Optymalizacja snapshotów w Event Sourcingu (`integra-ledger-service`)**:
-* Odtworzenie stanu konta z migawki z zerowym ogonem zdarzeń (`BenchmarkAccountSnapshotTail/tail_0`) trwa **25,34 ns/op** (`0 B/op`), przy 5 zdarzeniach od migawki (`tail_5`) **83,53 ns/op**, natomiast przy 99 zdarzeniach (`tail_99`) **1 145,00 ns/op** – aktualna migawka przyspiesza odczyt stanu konta **45,19-krotnie**.
+5. **Eliminacja narzutu wyliczania sald i blokad SQL dzięki TigerBeetle (`integra-ledger-service`)**:
+* Migracja księgi na natywny silnik **TigerBeetle** zlikwidowała konieczność budowania migawek aplikacyjnych w pętli (`SnapshotBatch/100/sequential`: 17,92 ms i 6 373 alokacji w starym modelu SQL) oraz rywalizację o blokady wierszy na kontach zbiorczych (`PostingLoad/hot_pair`: 4,07 ms i narzut +33% w PostgreSQL `SELECT ... FOR UPDATE`).
+* W TigerBeetle saldo konta (`CreditsPosted - DebitsPosted`) jest aktualizowane natywnie i atomowo w jądrze bazy w czasie rzeczywistym. Odczyt salda (`tbClient.LookupAccounts`) jest bezpośrednią operacją binarną wykonywaną w mikrosekundach z zerowym narzutem alokacji po stronie bazy.
 
 
+6. **Bezalokacyjna kryptografia strumieniowa (`sync.Pool` dla 64 KB)**:
+* W testach kryptografii strumieniowej dla dużych bloków danych standardowe operacje alokowały 73 760 B/op (2 alokacje).
+* Wdrożenie zarządzania buforami przez `sync.Pool` (`BenchmarkSeal_64KB` oraz `BenchmarkOpen_64KB`) całkowicie wyeliminowało alokacje na stercie, osiągając stabilne **0 B/op i 0 allocs/op** przy zachowaniu przepustowości `XChaCha20-Poly1305` na poziomie ponad **2,1 GB/s** na rdzeń.
 
 
-6. **Analiza wartości odstających (outliers) w historii benchmarków**:
-* Największe wartości w `B/op` i `ns/op` występują w testach kryptografii strumieniowej dla dużych bloków danych: `BenchmarkEncrypt/64KB` (**30 942,00 ns/op**, **73 760 B/op**, 2 alokacje) oraz `BenchmarkDecrypt/64KB` (**29 737,00 ns/op**, **65 568 B/op**, **+21,28% szybciej** niż baseline `37 776,00 ns/op`), co przekłada się na przepustowość szyfrowania `XChaCha20-Poly1305` na poziomie ponad **2,1 GB/s** na pojedynczym rdzeniu.
+7. **Potokowość publikacji wiadomości Kafka (przyspieszenie 15,75x)**:
+* Zastąpienie synchronicznego trybu *stop-and-wait* (`DeliveryWindow/Window_1`: 36,55 ms) potokową pulą workerów z buforowanym kanałem zadań (`DeliveryWindow/Window_16`: **2,30 ms**) przyniosło **15,75-krotne skrócenie czasu publikacji wsadu zdarzeń**, w pełni ukrywając opóźnienia RTT sieci. Ponadto wyeliminowano wycieki pamięci w pętlach dyspozytora outboxu poprzez zamianę `time.After(...)` na reużywalny `time.NewTimer` z jawnym `Reset()`.
 
 
 * Pozorny wzrost czasu wykonania w commitach `5b29446` i `64699cf` dla `BenchmarkIdentityRegistrationDispatch` (z `4,732 ns` do `187,70 ns`, `336 B/op`), `BenchmarkRegisterUser_UnitOfWork` (z `2 252 ns` do `3 599 ns`, `2 254 B/op`) oraz `BenchmarkRegisterUser_CallerTx` (z `1 185 ns` do `2 667 ns`, `1 762 B/op`) **nie jest regresją wydajnościową**, lecz efektem zastąpienia wcześniejszych uproszczonych zaślepek pełną logiką produkcyjną: walidacją domenową, generowaniem nagłówków śledzenia W3C (`telemetry.OutboxHeaders`) oraz serializacją zdarzeń do transakcyjnego wzorca Outbox.
@@ -304,16 +308,17 @@ graph TB
         end
 
         subgraph LEDGER["integra-ledger-service"]
-            LDG_Srv["Ledger Server<br/>(HTTP :8085 / gRPC :9085)"]
-            LDG_Wrk["Ledger Outbox & Snapshot Worker"]
+            LDG_Srv["Ledger Server<br/>(HTTP :8085 / gRPC :9085)<br/>+ TigerBeetle Go Client"]
+            LDG_Wrk["Ledger Outbox & Pipelined Worker<br/>(DeliveryWindow = 16)"]
             LDG_Cat["Project-Catchup CLI"]
         end
     end
 
-    subgraph DataLayer["Warstwa danych i komunikacji (AWS RDS, DocumentDB, ElastiCache, MSK)"]
+    subgraph DataLayer["Warstwa danych i komunikacji (TigerBeetle, AWS RDS, DocumentDB, ElastiCache, MSK)"]
+        TB[("TigerBeetle Financial Ledger<br/>(Cluster ID 0, Direct I/O :3000)<br/>• debits/credits_posted<br/>• Viewstamped Replication")]
         PG_IAM[("PostgreSQL 18<br/>Schema: iam")]
         PG_USR[("PostgreSQL 18<br/>Schema: users")]
-        PG_LDG[("PostgreSQL 18<br/>Schema: ledger")]
+        PG_LDG[("PostgreSQL 18 (Metadane & Projekcje)<br/>Schema: ledger")]
         Mongo[("MongoDB 8 / DocumentDB<br/>(Sesje Auth & Password Reset)")]
         Valkey[("Valkey 9 / ElastiCache<br/>(L2 Security State, Leases, Claims Cache)")]
         Kafka{{"Apache Kafka / AWS MSK<br/>(38 Kanonicznych Tematów Zdarzeń)"}}
@@ -354,6 +359,7 @@ graph TB
     USR_Wrk <--> Kafka
     USR_Wrk --> PG_USR
 
+    LDG_Srv --> TB
     LDG_Srv --> PG_LDG
     LDG_Srv --> Valkey
     LDG_Wrk <--> Kafka
@@ -446,6 +452,7 @@ flowchart TB
     end
 
     subgraph InfraLayer["Warstwa infrastruktury (internal/infrastructure)"]
+        TB["TigerBeetle Adapter (tigerbeetle-go)<br/>AccountRepository & PostingRepository<br/>Uint128 ID Mapping, Direct I/O"]
         PG["PostgreSQL Repository (pgx/v5 + sqlc)<br/>Unit of Work / Single-CTE Atomic Commit"]
         MG["MongoDB Repository<br/>(Sesje Auth, Tokeny Refresh, Reset Haseł)"]
         VK["Valkey Adapter<br/>(L2 Claims Cache, SecurityState, Leases)"]
@@ -461,6 +468,7 @@ flowchart TB
     Cmds --> Events
     Cmds --> Ports
     Qrys --> Ports
+    TB -. "implementuje" .-> Ports
     PG -. "implementuje" .-> Ports
     MG -. "implementuje" .-> Ports
     VK -. "implementuje" .-> Ports
@@ -521,53 +529,43 @@ sequenceDiagram
 
 ---
 
-### 4.2. Przepływ 2: Atomowe księgowanie podwójnego zapisu (Double-Entry Ledger Posting & Idempotency)
+### 4.2. Przepływ 2: Atomowe księgowanie podwójnego zapisu (TigerBeetle Financial Ledger & Idempotency)
 
-Przepływ pracy w `integra-ledger-service` podczas wykonywania operacji `PostAccounts` (`internal/infrastructure/postgres/posting.go` oraz `db/queries/posting_commit.sql`):
+Przepływ pracy w `integra-ledger-service` z TigerBeetle jako autorytatywnym źródłem prawdy dla sald i transferów (`internal/infrastructure/tigerbeetle/repository.go` oraz `internal/app/commands/handlers.go`):
 
 ```mermaid
 sequenceDiagram
     autonumber
     actor Caller as Klient / Usługa Zlecająca
     participant Srv as Ledger Service (PostAccounts)
-    participant Dom as Domain (Money & PostingHash)
-    participant DB as PostgreSQL (Schema: ledger)
-    participant Wrk as Outbox & Snapshot Worker
+    participant Dom as Domain (Money & TB ID Mapping)
+    participant TB as TigerBeetle Cluster (Direct I/O :3000)
+    participant DB as PostgreSQL (Metadane & Outbox)
+    participant Wrk as Pipelined Worker Pool (DeliveryWindow = 16)
     participant Kafka as Broker Kafka
 
-    Caller->>Srv: RecordTransaction (DebitID, CreditID, Amount, Currency, IdempotencyKey, ExpectedVersions)
+    Caller->>Srv: RecordTransaction (DebitUUID, CreditUUID, Amount, Currency, IdempotencyKey)
     Srv->>Srv: Weryfikacja zgodności TenantID z kontekstem tożsamości
-    Srv->>Dom: Obliczenie 33-bajtowego skrótu binarnego RequestDigest v2 (SHA-256, 200.9 ns, 0 B/op)
-    Dom-->>Srv: RequestDigest [33]byte
+    Srv->>Dom: Walidacja domenowa: Currency match, MinorUnits (int64)
+    Srv->>Dom: Mapowanie UUID na 128-bitowe identyfikatory (UUIDToUint128, 0 B/op)
+    Dom-->>Srv: Uint128 (DebitID, CreditID, TransferID)
 
-    Srv->>DB: BEGIN TRANSACTION
-    Srv->>DB: ClaimAndLockPostingAccounts (Blokada wierszy FOR UPDATE + sprawdzenie IdempotencyKey)
-    alt IdempotencyKey już istnieje z tym samym RequestDigest
-        DB-->>Srv: Zwrócenie istniejącego TransactionID (Powtórzenie idempotentne)
-        Srv->>DB: ROLLBACK
-        Srv-->>Caller: 200 OK (Istniejący TransactionID)
-    else IdempotencyKey istnieje z INNYM RequestDigest
-        DB-->>Srv: Błąd konfliktu parametrów
-        Srv->>DB: ROLLBACK
-        Srv-->>Caller: 409 Conflict (Naruszenie kontraktu idempotentności)
-    else Nowa transakcja
-        Srv->>Dom: Walidacja domenowa: Currency match, MinorUnits (int64), Optimistic Locking Versions
-        Srv->>DB: Wykonanie pojedynczego zapytania CTE CommitPosting:
-        Note right of DB: 1. UPDATE ledger_accounts (Debit & Credit, version + 1)<br/>2. INSERT INTO account_events (historia sald)<br/>3. INSERT INTO snapshot_jobs (jeśli version % interval == 0)<br/>4. INSERT INTO events (Event Store)<br/>5. INSERT INTO ledger_entries (dziennik księgowy)<br/>6. UPDATE posting_requests (Zapis wyniku idempotentnego)<br/>7. INSERT INTO outbox (Zdarzenie z nagłówkami W3C Trace)
-        DB-->>Srv: Zatwierdzony wiersz transakcji
-        Srv->>DB: COMMIT TRANSACTION
-        Srv-->>Caller: 200 OK (TransactionID, RecordedAt)
+    Srv->>TB: CreateTransfers([]types.Transfer)
+    Note over TB: Deterministyczne jądro bazy (Direct I/O, IPC_LOCK):<br/>1. Atomowa weryfikacja sald i debits/credits_posted<br/>2. Natywna idempotencyjność po Transfer ID (brak duplikatów)<br/>3. Brak blokad wierszy SQL i zerowy koszt kalkulacji migawek
+    alt Błąd walidacji w TigerBeetle (np. brak środków / nieprawidłowe konto)
+        TB-->>Srv: TransferError (ExceedsCredits, AccountsMustBeDifferent, etc.)
+        Srv-->>Caller: 422 Unprocessable Entity / 409 Conflict
+    else Sukces transferu w TigerBeetle
+        TB-->>Srv: Transfer OK (0 błędów, potwierdzenie natychmiastowe)
+        Srv->>DB: Zapis opcjonalnych metadanych biznesowych i zdarzenia w Outbox
+        Srv-->>Caller: 200 OK (TransferID, Saldo zaktualizowane)
     end
 
-    par Asynchroniczna publikacja i migawki
+    par Asynchroniczny potok publikacji (Pipelined Outbox Relay)
         Wrk->>DB: Pobranie nieopublikowanych rekordów z ledger.outbox
-        Wrk->>Kafka: Publikacja na temat "ledger-updated" (z propagacją traceparent & correlation_id)
+        Wrk->>Kafka: Publikacja wsadowa na temat "ledger-updated" (DeliveryWindow = 16, kanał buforowany)
         Wrk->>DB: Oznaczenie published = true w ledger.outbox
-    and Budowanie migawek kont
-        Wrk->>DB: Pobranie zadań z ledger.snapshot_jobs
-        Wrk->>DB: Zapis skonsolidowanego AccountSnapshot (przyspieszenie odczytu 45.2x)
     end
-
 ```
 
 ---
@@ -629,18 +627,17 @@ Przepływ zdefiniowany w `.github/workflows/ci.yaml`, `scripts/Audit-Project.py`
 
 ```mermaid
 flowchart TD
-    Push["Push / Pull Request do Monorepo"] --> Setup["Inicjalizacja środowiska Go 1.26 (GOWORK=off, CGO_ENABLED=1)<br/>Start kontenerów: 3x Postgres 18, MongoDB 8, Valkey 9"]
-    Setup --> Audit["scripts/Audit-Project.py<br/>Weryfikacja każdego modułu w izolacji (go vet, staticcheck v0.7.0)"]
+    Push["Push / Pull Request do Monorepo"] --> Setup["Inicjalizacja środowiska Go 1.26 (GOWORK=off, CGO_ENABLED=1)<br/>Start kontenerów: Postgres 18, Mongo 8, Valkey 9, TigerBeetle 0.16 (scratch)"]
+    Setup --> Audit["scripts/Audit-Project.py<br/>Weryfikacja modułów w izolacji (format, tidy, build, vet, staticcheck v0.7.0)"]
     Audit --> Vuln["govulncheck ./...<br/>Skanowanie podatności CVE w drzewie zależności"]
     Vuln --> Codegen["Weryfikacja generatorów kodu:<br/>check-sqlc.py (spójność SQL) & check-proto.py (spójność Buf Protobuf)"]
     Codegen --> UnitTests["Testy jednostkowe i architektoniczne AST:<br/>go test -race -shuffle=on -mod=readonly ./..."]
     UnitTests --> Migrate["Migracja izolowanych baz testowych:<br/>init-prod-pg.sql + cmd/migrate (IAM, User, Ledger)"]
-    Migrate --> IntTests["Testy integracyjne z detektorem wyścigów:<br/>-tags=integration -race (Postgres, Mongo, Valkey, Kafka)"]
-    IntTests --> BenchGate{"Bramka Wydajnościowa:<br/>Collect-Benchmarks.py<br/>(--max-regression-pct 20.0)"}
-    BenchGate -- "Brak regresji > 20%" --> DashGen["Generowanie wykresów SVG, Mermaid<br/>i BENCHMARKS-DASHBOARD.html"]
-    BenchGate -- "Wykryto regresję > 20%" --> Fail["Blokada Pipeline'u (CI Failed)"]
+    Migrate --> IntTests["Testy integracyjne z detektorem wyścigów:<br/>-tags=integration -race (Postgres, Mongo, Valkey, Kafka, TigerBeetle)"]
+    IntTests --> BenchGate{"Bramka Wydajnościowa:<br/>Collect-Benchmarks.py<br/>(Zero-Alloc Invariants, Jitter Filter, Scaled Regression Gate)"}
+    BenchGate -- "Brak regresji" --> DashGen["Generowanie wykresów SVG, Mermaid<br/>i BENCHMARKS-DASHBOARD.html"]
+    BenchGate -- "Wykryto regresję / Alokacje" --> Fail["Blokada Pipeline'u (CI Failed)"]
     DashGen --> InfraVal["Walidacja Infrastruktury:<br/>integra-infra/scripts/validate.sh (YAML, Helm, K8s, Terraform)"]
-
 ```
 
 [▲ Powrót do spisu treści](#spis-treści)
@@ -794,7 +791,7 @@ Moduł ten stanowi publiczny rdzeń otwartoźródłowy (`module [github.com/mate
 Oprócz pakietów eksportowanych do `integra-core`, moduł `integra-shared-go` zawiera kluczowe pakiety infrastrukturalne i bezpieczeństwa klasy Enterprise:
 
 * **`pkg/aead/` oraz `pkg/crypto/**`:
-* `chacha.go`, `chacha_bench_test.go`, `chacha_fuzz_test.go`, `chacha_test.go`, `aeadtest/keys.go`: Implementacja szyfrowania uwierzytelnionego **XChaCha20-Poly1305** (klucze 256-bitowe, losowe nonce 192-bitowe) wykorzystywana do szyfrowania zawartości pamięci podręcznej w Valkey oraz wrażliwych tokenów.
+* `chacha.go`, `chacha_bench_test.go`, `chacha_fuzz_test.go`, `chacha_test.go`, `aeadtest/keys.go`: Implementacja szyfrowania uwierzytelnionego **XChaCha20-Poly1305** (klucze 256-bitowe, losowe nonce 192-bitowe) wykorzystywana do szyfrowania zawartości pamięci podręcznej w Valkey oraz wrażliwych tokenów. Zoptymalizowana za pomocą puli `sync.Pool` dla 64-kilobajtowych buforów, co gwarantuje całkowicie bezalokacyjne operacje kryptograficzne (`0 B/op`, `0 allocs/op`).
 
 
 
@@ -806,10 +803,10 @@ Oprócz pakietów eksportowanych do `integra-core`, moduł `integra-shared-go` z
 
 
 * **`pkg/auth/`**:
-* `verifier.go`, `verifier_bench_test.go`, `verifier_concurrency_test.go`, `verifier_test.go`: Weryfikator `JWTVerifier` obsługujący klucze publiczne **Ed25519**, polityki wydawcy/odbiorcy (`WithPolicy`), szyfrowany cache L2 w Valkey (`ClaimsCache`) oraz pamięć podręczną L1.
+* `verifier.go`, `verifier_bench_test.go`, `verifier_concurrency_test.go`, `verifier_test.go`: Weryfikator `JWTVerifier` obsługujący klucze publiczne **Ed25519**, polityki wydawcy/odbiorcy (`WithPolicy`), nieblokujący wzorzec cache `Memo` (eliminacja *cache stampede* przy chybieniu L1), szyfrowany cache L2 w Valkey (`ClaimsCache`) oraz pamięć podręczną L1.
 
 
-* `l1_cache.go`, `l1_cache_test.go`: 32-shardowa pamięć podręczna L1 w procesie Go z haszowaniem inline FNV-1a, rotacją co 30s, limitem 32 768 wpisów, TTL 500 ms i separacją linii cache `cpu.CacheLinePad`.
+* `l1_cache.go`, `l1_cache_test.go`: 32-shardowa pamięć podręczna L1 w procesie Go z haszowaniem inline FNV-1a, rotacją co 30s, limitem 32 768 wpisów, TTL 500 ms, bezalokacyjnym wyszukiwaniem po wycinku bajtów i separacją linii cache `cpu.CacheLinePad`.
 
 
 * `account_state.go`, `account_recovery.go`, `blacklist.go`, `local.go`, `claims.go` (+ testy integracyjne i fuzzingowe): Atomowe skrypty Lua w Valkey weryfikujące 1-sekundowe dzierżawy stanu konta (`CheckAccountState`, `PublishAccountSnapshot`), czarne listy unieważnionych tokenów JTI oraz odzyskiwanie spójności po awarii Valkey.
@@ -845,10 +842,10 @@ Oprócz pakietów eksportowanych do `integra-core`, moduł `integra-shared-go` z
 
 
 * **`pkg/kafka/` oraz `pkg/outbox/**`:
-* `kafka/api.go`, `producer.go`, `consumer.go`, `batch.go`, `metadata.go`, `middleware.go`, `config.go`, `unsupported.go`: Wysokowydajny klient Kafka z obsługą wsadową, automatycznym wstrzykiwaniem metadanych OpenTelemetry i warunkową kompilacją na platformy Linux/inne.
+* `kafka/api.go`, `producer.go`, `consumer.go`, `batch.go`, `metadata.go`, `middleware.go`, `config.go`, `unsupported.go`: Wysokowydajny klient Kafka z potokowym przetwarzaniem wsadowym (Worker Pool z buforowanym kanałem, `DefaultDeliveryWindow = 16`, 15.75x przyspieszenia publikacji: z 36.55 ms do 2.30 ms), automatycznym wstrzykiwaniem metadanych OpenTelemetry i timeoutami kontekstu.
 
 
-* `outbox/worker.go`, `relay.go`, `tx.go`: Implementacja wzorca **Transactional Outbox** gwarantującego dostarczenie zdarzeń *at-least-once* z tabeli bazodanowej do brokera Kafka w ramach transakcji SQL.
+* `outbox/worker.go`, `relay.go`, `tx.go`: Implementacja wzorca **Transactional Outbox** z synchronizacją `errgroup` i eliminacją wycieków timerów (`time.NewTimer` z jawnym `Reset()`), gwarantująca niezawodne dostarczenie zdarzeń do Kafki.
 
 
 
@@ -985,7 +982,7 @@ Serwis zarządzający profilami użytkowników, umiejętnościami (*skills*) ora
 * `domain/`: `account.go`, `profile.go`, `skill.go`, `permissions.go`, `events.go`.
 
 
-* `app/`: `profiles.go`, `accounts.go`, `identity.go`, `access_service.go`, podkatalogi `commands/` (`accounts.go`, `identity.go`, `profiles.go`), `queries/` (`accounts.go`, `profiles.go`) oraz `ports/` (`access_ports.go`, `audit.go`, `profile.go`).
+* `app/`: `profiles.go`, `accounts.go`, `identity.go`, `access_service.go`, podkatalogi `commands/` (`accounts.go`, `identity.go`, `profiles.go` – w tym No-Op Update Filter pomijający zbędne zapisy do bazy przy niezmienionych polach profilu), `queries/` (`accounts.go`, `profiles.go`) oraz `ports/` (`access_ports.go`, `audit.go`, `profile.go`).
 
 
 
@@ -1052,16 +1049,15 @@ Najbardziej zaawansowany obliczeniowo mikroserwis w ekosystemie, realizujący op
 * `app/`: `operations.go`, `access_service.go`, `commands/handlers.go`, `commands/integration.go`, `queries/handlers.go`, `ports/` (`access_ports.go`, `payout.go`, `posting.go`, `publication.go`, `repository.go`, `tenant.go`).
 
 
+* `infrastructure/tigerbeetle/`:
+* `client.go`, `client_test.go`: Inicjalizacja binarnego klienta Go (`github.com/tigerbeetle/tigerbeetle-go`) z adresem klastra, ID klastra i obsługą Direct I/O.
+* `id.go`, `id_test.go`: Bezalokacyjna, dwukierunkowa konwersja RFC 4122 UUID ↔ 128-bitowe liczby całkowite TigerBeetle (`UUIDToUint128`, `Uint128ToUUID`).
+* `repository.go`, `repository_test.go`: Implementacja portów `AccountRepository` i `PostingRepository` z bezpośrednią obsługą `client.CreateTransfers` i `client.LookupAccounts`, atomową weryfikacją debetów/kredytów i eliminacją blokad SQL `SELECT ... FOR UPDATE`.
+
+
 * `infrastructure/postgres/`:
-* `posting.go`: Transakcyjne księgowanie `PostAccounts` z blokadami wierszy i pojedynczym CTE `CommitPosting`.
-
-
 * `request_hash.go`: Binarne ramkowanie żądań na buforze stosowym `[512]byte` i wyliczanie 33-bajtowego skrótu idempotentności SHA-256 (`RequestDigest`, `200.9 ns/op`, `0 B/op`).
-
-
-* `event_store.go`, `event_codec.go`, `account_snapshots.go`, `snapshot_codec.go`: Zapis i odczyt zdarzeń oraz migawek z pulą buforów serializacyjnych (`490.1 ns/op`).
-
-
+* `event_store.go`, `event_codec.go`: Zapis i odczyt zdarzeń audytowych z pulą buforów serializacyjnych.
 * `invoice_store.go`, `invoice_codec.go`, `payout_store.go`, `projections.go`, `outbox.go`, `tenant.go`, `audit.go`, `metrics.go`.
 
 
@@ -1092,7 +1088,7 @@ Kompletna definicja **Infrastructure as Code (IaC)** oraz narzędzi DevSecOps/SR
 * `Chart.yaml`, `values.yaml`, `templates/` (`microservice.yaml`, `linkerd.yaml`, `network-policy.yaml`, `configmap.yaml`, `secrets.yaml`, `_helpers.tpl`): Uniwersalny szablon wdrożeniowy Kubernetes obsługujący adnotacje siatki usług **Linkerd mTLS**, polityki sieciowe Zero-Trust (`NetworkPolicy`) oraz autoskalowanie poziome **HPA** (2–10 replik przy 70% CPU).
 
 
-* `deploy/k8s/infra/`: Manifesty dla klastrów `postgresql.yaml`, `mongodb.yaml`, `valkey.yaml`, `kafka.yaml`, `jaeger.yaml`, `loki.yaml`, `monitoring.yaml`.
+* `deploy/k8s/infra/`: Manifesty dla klastrów `tigerbeetle.yaml` (StatefulSet TigerBeetle z Direct I/O, `IPC_LOCK` i portem 3000), `postgresql.yaml`, `mongodb.yaml`, `valkey.yaml`, `kafka.yaml`, `jaeger.yaml`, `loki.yaml`, `monitoring.yaml`.
 
 
 

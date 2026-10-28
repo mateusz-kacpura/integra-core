@@ -116,16 +116,18 @@ The public open-source core (`github.com/mateusz-kacpura/integra-core`) extracte
 
 Contains enterprise-grade utilities and security implementations:
 
-* **Authenticated Encryption (`pkg/aead`)**:
+* **Authenticated Encryption (`pkg/aead`, `pkg/crypto`)**:
   - `XChaCha20-Poly1305` authenticated cipher engine with automatic key derivation.
+  - Zero-allocation 64KB buffers managed via `sync.Pool` achieving **0 B/op and 0 allocs/op** for large payload encryption and decryption.
 * **Multi-Tier Security & Authentication (`pkg/auth`)**:
-  - `JWTVerifier`: Asymmetric Ed25519 token verification with public key discovery.
-  - `L1Cache`: Cache-line padded (`[64]byte`) in-process lock-free cache resolving tokens in **36.5 ns**.
-  - `AccountState`: Fast-invalidation lease checker synchronizing with Valkey L2.
+  - `JWTVerifier`: Asymmetric Ed25519 token verification with public key discovery and non-blocking `Memo` singleflight cache (eliminating cache stampedes on L1 misses).
+  - `L1Cache`: Cache-line padded (`[64]byte`) in-process lock-free cache resolving tokens in **36.5 ns** with zero-alloc string-from-slice map lookups.
+  - `AccountState`: Fast-invalidation lease checker synchronizing with Valkey L2 via consolidated Lua scripts.
 * **Role-Based Access Control (`pkg/rbac`)**:
   - Parallel bitmask permission matrix checking permissions in **4.4 ns**.
 * **Distributed Messaging & Outbox (`pkg/kafka`, `pkg/outbox`)**:
-  - Reliable at-least-once message delivery with transactional outbox publishers and idempotency consumers.
+  - Pipelined worker pool with buffered channel (`DefaultDeliveryWindow = 16`), delivering a **15.75x speedup** (latency reduced from 36.55 ms to 2.30 ms).
+  - Leak-free transactional outbox worker utilizing `errgroup` and reusable `time.NewTimer` instances.
 * **Security State Authority (`pkg/securitystate`)**:
   - Centralized role authority lease coordination backed by Valkey Lua scripts.
 
@@ -163,7 +165,8 @@ Contains enterprise-grade utilities and security implementations:
 
 * **Core Responsibility**: User profiles, account management, competency matrices, and KRS business registry sync.
 * **Performance Architecture**:
-  - Read replica projection caching delivering profile reads in **46.2 ns**.
+  - Read replica projection caching delivering profile reads in **20.9 ns**.
+  - No-Op Update Filter in `internal/app/commands/profiles.go`: Bypasses redundant database transactions and WAL writes when profile fields remain unchanged.
   - Data-Oriented Design value slices eliminating heap allocations during bulk queries.
 * **Event Handlers**:
   - Consumes `canonical.iam.user_registered` to initialize default profile projections and skills vectors.
@@ -179,11 +182,14 @@ Contains enterprise-grade utilities and security implementations:
 
 ---
 
-* **Core Responsibility**: Immutable double-entry financial accounting, multi-currency wallets, invoices, and payouts.
+* **Core Responsibility**: Authoritative immutable double-entry financial accounting, real-time balance tracking, multi-currency wallets, invoices, and payouts.
 * **Architectural Pillars**:
-  - **Single CTE Transaction (`CommitPosting`)**: Atomically verifies OCC balance, inserts ledger journal entries, appends to immutable event store (`ledger.events`), and emits to outbox in 1 database roundtrip.
+  - **TigerBeetle Authoritative Ledger Engine (`internal/infrastructure/tigerbeetle/`)**:
+    - `client.go`: Direct I/O binary IPC client connecting to the TigerBeetle cluster on port 3000.
+    - `id.go`: Zero-allocation bidirectional mapping between RFC 4122 UUIDs and TigerBeetle native 128-bit unsigned integers (`UUIDToUint128`, `Uint128ToUUID`).
+    - `repository.go`: Implementation of `AccountRepository` and `PostingRepository` with atomic debit/credit invariants, native idempotency by Transfer ID, eliminating SQL row locks (`SELECT ... FOR UPDATE`) and database contention.
   - **Memory Arenas & Stack Hashing**: SHA-256 request frames hashed in `[512]byte` stack buffers (`0 B/op`).
-  - **Snapshots Engine (`snapshot_jobs`)**: Periodic state snapshotting delivering a **45x read speedup** for historical accounts (`tail_0` in 25.3 ns).
+  - **Pipelined Outbox Relay**: Transactional outbox worker with `DeliveryWindow = 16` publishing canonical ledger events to Kafka.
   - `cmd/project-catchup`: Production projection rebuild tool.
 
 ---
@@ -198,7 +204,7 @@ Contains enterprise-grade utilities and security implementations:
 ---
 
 * **Edge Cluster (`deploy/edge`)**: BunkerWeb WAF, ModSecurity CRS, automatic Let's Encrypt TLS renewal, rate limiting (100 req/s), and antibot rules.
-* **Kubernetes & Helm (`deploy/k8s`, `deploy/helm`)**: Full Helm charts for production microservices, Linkerd mTLS service mesh, and horizontal pod autoscalers (HPA).
+* **Kubernetes & Helm (`deploy/k8s`, `deploy/helm`)**: Full Helm charts for production microservices, Linkerd mTLS service mesh, TigerBeetle StatefulSet (`deploy/k8s/infra/tigerbeetle.yaml` with Direct I/O and `IPC_LOCK`), and horizontal pod autoscalers (HPA).
 * **Terraform IaC (`deploy/terraform`)**: AWS infrastructure provisioning (EKS, RDS PostgreSQL 18, ElastiCache Valkey, MSK Kafka, DocumentDB).
 * **Observability Stack (`monitoring/`)**: Jaeger OpenTelemetry distributed tracing, Prometheus alert rules, Grafana Loki log aggregation, and customized dashboards.
 
